@@ -12,7 +12,7 @@ from datetime import datetime, time as dt_time
 from pathlib import Path
 
 APP_NAME = "KeepAwake"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 DAY_KEYS = [
     "monday", "tuesday", "wednesday", "thursday",
