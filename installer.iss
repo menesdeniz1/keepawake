@@ -1,5 +1,5 @@
 #define MyAppName "KeepAwake"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "KeepAwake"
 #define MyAppExeName "KeepAwake.exe"
 
@@ -14,7 +14,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 UsedUserAreasWarning=no
 OutputDir=output
-OutputBaseFilename=KeepAwakeSetup-v1.2
+OutputBaseFilename=KeepAwakeSetup-v1.3
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

@@ -202,6 +202,19 @@ Minimum ve maksimum cooldown değerleri Ayarlar ekranından `0-3600 saniye` aras
 
 Eski v1.1 config dosyaları geriye dönük uyumludur; yeni cooldown alanları yoksa otomatik olarak `70` ve `110` varsayılanları kullanılır.
 
+## v1.3 - Otomatik güncelleme ve Linux desteği
+
+- Uygulama artık kendini `latest.json` manifestiyle kontrol edip SHA256
+  doğrulamalı sessiz kurulumla güncelleyebiliyor (bkz. "Otomatik güncelleme").
+- Linux (X11) desteği eklendi: idle algılama, mouse nudge, uyku engelleme ve
+  otomatik başlatma artık platforma özgü backend'ler üzerinden çalışıyor
+  (bkz. "Platform desteği").
+- `core.py` + `backend_windows.py`/`backend_linux.py` ayrımıyla kod tabanı
+  platform bağımsız çekirdek ve platforma özgü backend olarak ikiye bölündü.
+- `tests/` altında gerçek (mock olmayan) bir test paketi eklendi.
+- Eski v1.2 config dosyaları geriye dönük uyumludur; yeni `auto_check_updates`
+  alanı yoksa otomatik olarak `true` varsayılanı kullanılır.
+
 ## Otomatik güncelleme
 
 KeepAwake, repo kökündeki [`latest.json`](latest.json) manifestini kontrol ederek

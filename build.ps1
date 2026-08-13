@@ -37,6 +37,8 @@ Write-Host "[4/5] KeepAwake.exe oluşturuluyor..."
     --name KeepAwake `
     app.py
 
+$outputBaseName = (Select-String -Path "installer.iss" -Pattern "^OutputBaseFilename=(.+)$").Matches[0].Groups[1].Value.Trim()
+
 $isccCandidates = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
@@ -54,11 +56,11 @@ if (-not $iscc) {
     Write-Host ""
     Write-Host "Inno Setup 6 bulunamadı." -ForegroundColor Yellow
     Write-Host "Inno Setup 6'yı kurup build.ps1'i tekrar çalıştırırsanız"
-    Write-Host "output\KeepAwakeSetup-v1.2.exe de oluşturulur."
+    Write-Host "output\$outputBaseName.exe de oluşturulur."
     exit 0
 }
 
-Write-Host "[5/5] KeepAwakeSetup-v1.2.exe oluşturuluyor..."
+Write-Host "[5/5] $outputBaseName.exe oluşturuluyor..."
 & $iscc "installer.iss"
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup derlemesi başarısız oldu. Exit code: $LASTEXITCODE"
@@ -66,6 +68,6 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "HAZIR: output\KeepAwakeSetup-v1.2.exe" -ForegroundColor Green
+Write-Host "HAZIR: output\$outputBaseName.exe" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
