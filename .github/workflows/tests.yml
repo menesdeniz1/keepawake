@@ -1,0 +1,29 @@
+name: Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (Xvfb + Qt runtime libs)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libegl1
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        run: xvfb-run -a pytest tests/ -v
