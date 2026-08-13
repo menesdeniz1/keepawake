@@ -1,6 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
 .venv/
+venv/
+env/
+ENV/
+
+# Build / packaging output
 build/
 dist/
 output/
-__pycache__/
 *.spec
+*.egg-info/
+
+# Local runtime config / secrets (should never live in the repo)
+.env
+.env.*
+*.env
+config.json
+config.local.json
+secrets.json
+*secret*
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*.cer
+
+# Logs
+*.log
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
