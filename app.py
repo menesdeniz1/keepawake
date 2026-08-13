@@ -1,11 +1,6 @@
 import sys
-import os
-import json
 import random
 import tempfile
-import ctypes
-import winreg
-from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta, time as dt_time
 from pathlib import Path
 
@@ -31,275 +26,40 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import (
+    APP_NAME,
+    APP_VERSION,
+    DAY_KEYS,
+    DAY_LABELS_TR,
+    ConfigStore,
+    format_duration,
+    is_inside_schedule,
+)
 from updater import UpdateManager, run_silent_install
 
-APP_NAME = "KeepAwake"
-APP_VERSION = "1.2.0"
+if sys.platform == "win32":
+    from backend_windows import (
+        clear_execution_state,
+        get_idle_seconds,
+        is_startup_enabled,
+        nudge_mouse,
+        set_execution_state,
+        set_startup_enabled,
+    )
+elif sys.platform.startswith("linux"):
+    from backend_linux import (
+        clear_execution_state,
+        get_idle_seconds,
+        is_startup_enabled,
+        nudge_mouse,
+        set_execution_state,
+        set_startup_enabled,
+    )
+else:
+    print(f"KeepAwake, {sys.platform} platformunu desteklemiyor.")
+    raise SystemExit(1)
+
 SINGLE_INSTANCE_NAME = "KeepAwake.SingleInstance"
-
-ES_SYSTEM_REQUIRED = 0x00000001
-ES_DISPLAY_REQUIRED = 0x00000002
-ES_CONTINUOUS = 0x80000000
-
-INPUT_MOUSE = 0
-MOUSEEVENTF_MOVE = 0x0001
-
-DAY_KEYS = [
-    "monday", "tuesday", "wednesday", "thursday",
-    "friday", "saturday", "sunday"
-]
-DAY_LABELS_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
-
-
-class LASTINPUTINFO(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", ctypes.c_uint),
-        ("dwTime", ctypes.c_uint32),
-    ]
-
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [
-        ("dx", ctypes.c_long),
-        ("dy", ctypes.c_long),
-        ("mouseData", ctypes.c_uint32),
-        ("dwFlags", ctypes.c_uint32),
-        ("time", ctypes.c_uint32),
-        ("dwExtraInfo", ctypes.c_size_t),
-    ]
-
-
-class INPUTUNION(ctypes.Union):
-    _fields_ = [
-        ("mi", MOUSEINPUT),
-    ]
-
-
-class INPUT(ctypes.Structure):
-    _anonymous_ = ("u",)
-    _fields_ = [
-        ("type", ctypes.c_uint32),
-        ("u", INPUTUNION),
-    ]
-
-
-@dataclass
-class AppConfig:
-    enabled: bool = True
-    idle_minutes: int = 4
-    check_interval_seconds: int = 5
-    start_time: str = "08:30"
-    end_time: str = "17:30"
-    days: list[str] | None = None
-    prevent_sleep: bool = True
-    keep_display_on: bool = True
-    simulate_mouse_input: bool = True
-    cooldown_min_seconds: int = 70
-    cooldown_max_seconds: int = 110
-    start_with_windows: bool = True
-    auto_check_updates: bool = True
-
-    def __post_init__(self):
-        if self.days is None:
-            self.days = DAY_KEYS[:5]
-
-
-class ConfigStore:
-    def __init__(self):
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            self.dir = Path(appdata) / APP_NAME
-        else:
-            self.dir = Path.home() / "AppData" / "Roaming" / APP_NAME
-        self.path = self.dir / "config.json"
-
-    def load(self) -> AppConfig:
-        if not self.path.exists():
-            return AppConfig()
-
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            allowed = set(AppConfig.__dataclass_fields__.keys())
-            filtered = {k: v for k, v in data.items() if k in allowed}
-            return AppConfig(**filtered)
-        except Exception:
-            return AppConfig()
-
-    def save(self, config: AppConfig) -> None:
-        self.dir.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix(".tmp")
-        temp.write_text(
-            json.dumps(asdict(config), indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        temp.replace(self.path)
-
-
-def get_idle_seconds() -> float:
-    """Windows'taki son kullanıcı girdisinden beri geçen süre."""
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-
-    info = LASTINPUTINFO()
-    info.cbSize = ctypes.sizeof(info)
-
-    if not user32.GetLastInputInfo(ctypes.byref(info)):
-        return 0.0
-
-    # LASTINPUTINFO.dwTime 32 bittir. Farkı aynı 32-bit tick alanında
-    # alarak GetTickCount wrap-around durumunu doğru ele alırız.
-    now32 = kernel32.GetTickCount() & 0xFFFFFFFF
-    elapsed_ms = (now32 - info.dwTime) & 0xFFFFFFFF
-    return elapsed_ms / 1000.0
-
-
-def set_execution_state(prevent_sleep: bool, keep_display_on: bool) -> bool:
-    flags = ES_CONTINUOUS
-
-    if prevent_sleep:
-        flags |= ES_SYSTEM_REQUIRED
-
-    if keep_display_on:
-        flags |= ES_DISPLAY_REQUIRED
-
-    return ctypes.windll.kernel32.SetThreadExecutionState(flags) != 0
-
-
-def clear_execution_state() -> None:
-    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
-
-
-def nudge_mouse() -> bool:
-    """Fareyi 1 piksel sağa ve tekrar sola hareket ettirir."""
-    user32 = ctypes.windll.user32
-
-    def send_relative_move(dx: int) -> bool:
-        item = INPUT(
-            type=INPUT_MOUSE,
-            mi=MOUSEINPUT(
-                dx=dx,
-                dy=0,
-                mouseData=0,
-                dwFlags=MOUSEEVENTF_MOVE,
-                time=0,
-                dwExtraInfo=0,
-            ),
-        )
-        sent = user32.SendInput(
-            1,
-            ctypes.byref(item),
-            ctypes.sizeof(INPUT),
-        )
-        return sent == 1
-
-    if not send_relative_move(1):
-        return False
-
-    # Orijinal davranıştaki kısa sağ-sol aralığı.
-    ctypes.windll.kernel32.Sleep(30)
-
-    return send_relative_move(-1)
-
-
-def startup_registry_path() -> str:
-    return r"Software\Microsoft\Windows\CurrentVersion\Run"
-
-
-def get_executable_command() -> str:
-    if getattr(sys, "frozen", False):
-        executable = Path(sys.executable).resolve()
-        return f'"{executable}" --background'
-
-    script = Path(__file__).resolve()
-    python_exe = Path(sys.executable)
-    pythonw = python_exe.with_name("pythonw.exe")
-    runner = pythonw if pythonw.exists() else python_exe
-    return f'"{runner}" "{script}" --background'
-
-
-def is_startup_enabled() -> bool:
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            startup_registry_path(),
-            0,
-            winreg.KEY_READ,
-        ) as key:
-            winreg.QueryValueEx(key, APP_NAME)
-            return True
-    except (FileNotFoundError, OSError):
-        return False
-
-
-def set_startup_enabled(enabled: bool) -> None:
-    path = startup_registry_path()
-
-    if enabled:
-        with winreg.CreateKeyEx(
-            winreg.HKEY_CURRENT_USER,
-            path,
-            0,
-            winreg.KEY_SET_VALUE,
-        ) as key:
-            winreg.SetValueEx(
-                key,
-                APP_NAME,
-                0,
-                winreg.REG_SZ,
-                get_executable_command(),
-            )
-        return
-
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            path,
-            0,
-            winreg.KEY_SET_VALUE,
-        ) as key:
-            winreg.DeleteValue(key, APP_NAME)
-    except (FileNotFoundError, OSError):
-        pass
-
-
-def parse_hhmm(value: str) -> dt_time:
-    hour, minute = map(int, value.split(":"))
-    return dt_time(hour=hour, minute=minute)
-
-
-def is_inside_schedule(config: AppConfig, now: datetime) -> bool:
-    selected = set(config.days or [])
-    if not selected:
-        return False
-
-    start = parse_hhmm(config.start_time)
-    end = parse_hhmm(config.end_time)
-    current = now.time().replace(second=0, microsecond=0)
-
-    # Aynı gün: örn. 08:30 -> 17:30
-    if start <= end:
-        return DAY_KEYS[now.weekday()] in selected and start <= current <= end
-
-    # Geceyi aşan program: örn. Cuma 22:00 -> Cumartesi 02:00
-    if current >= start:
-        return DAY_KEYS[now.weekday()] in selected
-
-    previous_day = (now.weekday() - 1) % 7
-    return current <= end and DAY_KEYS[previous_day] in selected
-
-
-def format_duration(seconds: float) -> str:
-    seconds = max(0, int(seconds))
-
-    if seconds < 60:
-        return f"{seconds} sn"
-
-    minutes, sec = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes} dk {sec} sn"
-
-    hours, minute = divmod(minutes, 60)
-    return f"{hours} sa {minute} dk"
 
 
 class SingleInstance:
@@ -366,7 +126,7 @@ class SettingsWindow(QMainWindow):
         self.enabled_cb = QCheckBox("KeepAwake etkin")
         general_form.addRow(self.enabled_cb)
 
-        self.startup_cb = QCheckBox("Windows ile otomatik başlat")
+        self.startup_cb = QCheckBox("Oturum açılışında otomatik başlat")
         general_form.addRow(self.startup_cb)
 
         self.auto_update_cb = QCheckBox("Güncellemeleri otomatik kontrol et")
@@ -412,7 +172,7 @@ class SettingsWindow(QMainWindow):
 
         root.addWidget(schedule_box)
 
-        behavior_box = QGroupBox("Windows güç davranışı")
+        behavior_box = QGroupBox("Güç davranışı")
         behavior_layout = QVBoxLayout(behavior_box)
 
         self.prevent_sleep_cb = QCheckBox(
@@ -551,7 +311,7 @@ class SettingsWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 APP_NAME,
-                f"Windows başlangıç ayarı değiştirilemedi:\n{exc}",
+                f"Otomatik başlatma ayarı değiştirilemedi:\n{exc}",
             )
             return
 
@@ -588,7 +348,7 @@ class KeepAwakeController(QObject):
         self.cooldown_until: datetime | None = None
         self.last_cooldown_seconds: float | None = None
 
-        # Registry gerçek başlangıç durumunun kaynak noktasıdır.
+        # Registry/autostart dosyası gerçek başlangıç durumunun kaynak noktasıdır.
         self.config.start_with_windows = is_startup_enabled()
 
         self.window = SettingsWindow(self)
@@ -747,7 +507,7 @@ class KeepAwakeController(QObject):
 
         # Orijinal betiğe daha sadık davranış:
         # Güç/ekran keep-awake seçildiyse çalışma programı aktif olduğu sürece
-        # Windows'a sürekli olarak bu isteği bildir.
+        # işletim sistemine sürekli olarak bu isteği bildir.
         power_requested = (
             self.config.prevent_sleep
             or self.config.keep_display_on
@@ -810,9 +570,9 @@ class KeepAwakeController(QObject):
 
         if self.config.prevent_sleep or self.config.keep_display_on:
             if self.execution_state_active:
-                parts.append("Windows keep-awake açık")
+                parts.append("keep-awake açık")
             else:
-                parts.append("Windows keep-awake uygulanamadı")
+                parts.append("keep-awake uygulanamadı")
 
         if self.config.simulate_mouse_input:
             threshold = self.config.idle_minutes * 60
@@ -930,10 +690,6 @@ class KeepAwakeController(QObject):
 
 
 def main():
-    if sys.platform != "win32":
-        print("KeepAwake yalnızca Windows'ta çalışır.")
-        return 1
-
     background = "--background" in sys.argv
     quit_requested = "--quit" in sys.argv
 
@@ -941,6 +697,12 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     app.setQuitOnLastWindowClosed(False)
+
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        print(
+            "Uyarı: Sistem tepsisi bulunamadı; tray simgesi görünmeyebilir "
+            "(bazı Linux masaüstü ortamlarında bir uzantı gerekebilir)."
+        )
 
     single = SingleInstance(app)
 
@@ -958,8 +720,8 @@ def main():
     controller = KeepAwakeController(app)
     single.become_primary(controller.handle_ipc_command)
 
-    # Windows başlangıcı: hiçbir pencere göstermeden tray.
-    # Elle açılış: ayar penceresini göster.
+    # Başlangıçta (Windows açılışı / Linux autostart): hiçbir pencere
+    # göstermeden tray. Elle açılış: ayar penceresini göster.
     if not background:
         controller.show_settings()
 

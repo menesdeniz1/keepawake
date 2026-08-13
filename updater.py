@@ -6,17 +6,11 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+from core import is_newer
+
 MANIFEST_URL = (
     "https://raw.githubusercontent.com/menesdeniz1/keepawake/main/latest.json"
 )
-
-
-def parse_version(text: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in text.strip().split("."))
-
-
-def is_newer(remote_version: str, current_version: str) -> bool:
-    return parse_version(remote_version) > parse_version(current_version)
 
 
 def _enable_redirects(request: QNetworkRequest) -> None:

@@ -1,6 +1,28 @@
 # KeepAwake 1.2
 
-Windows için system-tray tabanlı küçük bir güç yönetimi uygulaması.
+Windows ve Linux (X11) için system-tray tabanlı küçük bir güç yönetimi
+uygulaması.
+
+## Platform desteği
+
+| Özellik | Windows | Linux (X11) |
+|---|---|---|
+| Idle algılama | `GetLastInputInfo` | MIT-SCREEN-SAVER (python-xlib) |
+| Mouse nudge | `SendInput` | XTest (python-xlib) |
+| Uyku engelleme | `SetThreadExecutionState` | `systemd-inhibit` |
+| Otomatik başlatma | Registry `Run` anahtarı | `~/.config/autostart/*.desktop` |
+| Kurulum paketi | Inno Setup installer | (henüz yok — `python app.py` ile çalıştır) |
+
+Platform seçimi `app.py`'de `sys.platform`'a göre otomatik yapılır
+(`backend_windows.py` / `backend_linux.py`); ortak/platform bağımsız mantık
+(`AppConfig`, zamanlama, sürüm karşılaştırma) `core.py`'de yaşar.
+
+**Linux kısıtları:** idle algılama ve mouse nudge yalnızca X11'de (XWayland
+dahil) çalışır — native Wayland oturumunda sessizce devre dışı kalır, hata
+vermez. `systemd-inhibit` masaüstü ortamından bağımsızdır ama ekranın açık
+kalması esas olarak mouse nudge'ın idle sayacını sıfırlamasıyla sağlanır.
+Henüz bir `.deb`/AppImage paketi yok; Linux'ta doğrudan
+`python app.py` ile çalıştırılır (bkz. "Geliştirme modunda çalıştırma").
 
 ## Ne yapıyor?
 
@@ -14,7 +36,7 @@ Windows için system-tray tabanlı küçük bir güç yönetimi uygulaması.
 ## Ayarlanabilenler
 
 - Etkin / devre dışı
-- Windows ile otomatik başlat
+- Oturum açılışında otomatik başlat (Windows: Registry, Linux: autostart)
 - Idle eşiği: 1-240 dakika
 - Kontrol sıklığı: 1-60 saniye
 - Pazartesi-Pazar gün seçimi
@@ -29,7 +51,8 @@ Windows için system-tray tabanlı küçük bir güç yönetimi uygulaması.
 
 Ayar dosyası:
 
-`%APPDATA%\KeepAwake\config.json`
+- Windows: `%APPDATA%\KeepAwake\config.json`
+- Linux: `$XDG_CONFIG_HOME/KeepAwake/config.json` (tanımlı değilse `~/.config/KeepAwake/config.json`)
 
 ## Windows ile başlangıç
 
@@ -74,6 +97,29 @@ Tray başlangıcını test etmek için:
 ```powershell
 python app.py --background
 ```
+
+Linux'ta (bash):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+## Testleri çalıştırma
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+`core.py` testleri (zamanlama, sürüm karşılaştırma, config) her platformda
+çalışır. `backend_linux.py`'nin idle/mouse-nudge testleri gerçek bir X11
+bağlantısı ister; X yoksa (ör. headless CI) otomatik `skip` edilir — Xvfb ile
+çalıştırmak için: `Xvfb :99 & DISPLAY=:99 pytest tests/ -v`. `updater.py`
+testleri yerel bir `http.server` fixture'ı kullanır, gerçek ağ erişimi
+gerektirmez.
 
 ## EXE + gerçek installer oluşturma
 
