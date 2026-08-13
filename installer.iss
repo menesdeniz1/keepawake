@@ -60,6 +60,12 @@ Filename: "{app}\{#MyAppExeName}"; \
     Description: "KeepAwake'i şimdi çalıştır"; \
     Flags: nowait postinstall skipifsilent
 
+; Sessiz kurulum yalnızca auto-updater'dan gelir: ayar penceresini
+; göstermeden doğrudan tray'e dönmesi için --background ile açılır.
+Filename: "{app}\{#MyAppExeName}"; \
+    Parameters: "--background"; \
+    Flags: nowait skipifnotsilent
+
 [UninstallRun]
 Filename: "{app}\{#MyAppExeName}"; \
     Parameters: "--quit"; \

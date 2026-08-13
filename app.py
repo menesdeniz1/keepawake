@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import random
+import tempfile
 import ctypes
 import winreg
 from dataclasses import dataclass, asdict
@@ -29,6 +30,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from updater import UpdateManager, run_silent_install
 
 APP_NAME = "KeepAwake"
 APP_VERSION = "1.2.0"
@@ -94,6 +97,7 @@ class AppConfig:
     cooldown_min_seconds: int = 70
     cooldown_max_seconds: int = 110
     start_with_windows: bool = True
+    auto_check_updates: bool = True
 
     def __post_init__(self):
         if self.days is None:
@@ -365,6 +369,9 @@ class SettingsWindow(QMainWindow):
         self.startup_cb = QCheckBox("Windows ile otomatik başlat")
         general_form.addRow(self.startup_cb)
 
+        self.auto_update_cb = QCheckBox("Güncellemeleri otomatik kontrol et")
+        general_form.addRow(self.auto_update_cb)
+
         self.idle_spin = QSpinBox()
         self.idle_spin.setRange(1, 240)
         self.idle_spin.setSuffix(" dakika")
@@ -474,6 +481,7 @@ class SettingsWindow(QMainWindow):
 
         self.enabled_cb.setChecked(config.enabled)
         self.startup_cb.setChecked(is_startup_enabled())
+        self.auto_update_cb.setChecked(config.auto_check_updates)
         self.idle_spin.setValue(config.idle_minutes)
         self.check_spin.setValue(config.check_interval_seconds)
 
@@ -513,6 +521,7 @@ class SettingsWindow(QMainWindow):
         config = self.controller.config
         config.enabled = self.enabled_cb.isChecked()
         config.start_with_windows = self.startup_cb.isChecked()
+        config.auto_check_updates = self.auto_update_cb.isChecked()
         config.idle_minutes = self.idle_spin.value()
         config.check_interval_seconds = self.check_spin.value()
         config.start_time = self.start_edit.time().toString("HH:mm")
@@ -603,6 +612,10 @@ class KeepAwakeController(QObject):
         open_action.triggered.connect(self.show_settings)
         self.menu.addAction(open_action)
 
+        update_action = QAction("Güncellemeleri Kontrol Et")
+        update_action.triggered.connect(self.check_for_updates_manual)
+        self.menu.addAction(update_action)
+
         self.enable_action = QAction("Etkin")
         self.enable_action.setCheckable(True)
         self.enable_action.setChecked(self.config.enabled)
@@ -637,6 +650,18 @@ class KeepAwakeController(QObject):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
+
+        self._update_check_manual = False
+        self.update_manager = UpdateManager(APP_VERSION, self)
+        self.update_manager.update_available.connect(self.on_update_available)
+        self.update_manager.up_to_date.connect(self.on_up_to_date)
+        self.update_manager.check_failed.connect(self.on_update_check_failed)
+        self.update_manager.download_finished.connect(
+            self.on_update_download_finished
+        )
+
+        if self.config.auto_check_updates:
+            QTimer.singleShot(5000, self.check_for_updates_auto)
 
         self.apply_config()
         self.tick()
@@ -839,6 +864,64 @@ class KeepAwakeController(QObject):
 
         elif command == "QUIT":
             self.quit()
+
+    def check_for_updates_manual(self):
+        self._update_check_manual = True
+        self.update_manager.check()
+
+    def check_for_updates_auto(self):
+        self._update_check_manual = False
+        self.update_manager.check()
+
+    def on_update_available(self, version: str, url: str, sha256: str):
+        answer = QMessageBox.question(
+            self.window,
+            APP_NAME,
+            f"Yeni sürüm mevcut: {version} (mevcut sürüm: {APP_VERSION}).\n\n"
+            "Şimdi indirilip sessizce kurulsun mu? Kurulum sırasında "
+            "KeepAwake kapanıp otomatik olarak yeniden açılacak.",
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        dest_dir = Path(tempfile.gettempdir()) / APP_NAME
+        self.update_manager.download(url, sha256, dest_dir)
+
+    def on_up_to_date(self):
+        if self._update_check_manual:
+            QMessageBox.information(
+                self.window, APP_NAME, "KeepAwake zaten güncel."
+            )
+
+    def on_update_check_failed(self, reason: str):
+        if self._update_check_manual:
+            QMessageBox.warning(
+                self.window,
+                APP_NAME,
+                f"Güncelleme kontrolü başarısız oldu:\n{reason}",
+            )
+
+    def on_update_download_finished(self, success: bool, path_or_error: str):
+        if not success:
+            QMessageBox.warning(
+                self.window,
+                APP_NAME,
+                f"Güncelleme indirilemedi:\n{path_or_error}",
+            )
+            return
+
+        try:
+            run_silent_install(path_or_error)
+        except OSError as exc:
+            QMessageBox.critical(
+                self.window,
+                APP_NAME,
+                f"Güncelleme başlatılamadı:\n{exc}",
+            )
+            return
+
+        self.quit()
 
     def quit(self):
         clear_execution_state()

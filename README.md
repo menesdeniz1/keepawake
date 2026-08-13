@@ -155,3 +155,44 @@ Varsayılanlar:
 Minimum ve maksimum cooldown değerleri Ayarlar ekranından `0-3600 saniye` arasında değiştirilebilir. Minimum değer maksimumdan büyükse uygulama kaydetmeye izin vermez. Cooldown sürerken yeni mouse nudge üretilmez.
 
 Eski v1.1 config dosyaları geriye dönük uyumludur; yeni cooldown alanları yoksa otomatik olarak `70` ve `110` varsayılanları kullanılır.
+
+## Otomatik güncelleme
+
+KeepAwake, repo kökündeki [`latest.json`](latest.json) manifestini kontrol ederek
+kendini günceller.
+
+### Nasıl çalışır?
+
+1. Uygulama açılışta (5 sn gecikmeyle) ve Ayarlar'da "Güncellemeleri otomatik
+   kontrol et" açıksa, `raw.githubusercontent.com/menesdeniz1/keepawake/main/latest.json`
+   dosyasını okur. Tray menüsündeki **"Güncellemeleri Kontrol Et"** ile elle de
+   tetiklenebilir.
+2. Manifestteki `version`, uygulamanın kendi sürümünden (`VERSION`) daha
+   yeniyse ve `url` + `sha256` alanları doluysa, kullanıcıya bir onay
+   penceresi gösterilir.
+3. Onaylanırsa installer indirilir, **SHA256 doğrulanır** (uyuşmuyorsa
+   kurulum iptal edilir), sonra `KeepAwakeSetup.exe /VERYSILENT
+   /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS` ile sessizce çalıştırılır.
+4. Sessiz kurulum bittiğinde installer, uygulamayı `--background` ile
+   yeniden açar (ayarlar penceresi açılmadan, doğrudan tray'e döner).
+
+`sha256` boşsa veya `url` boşsa güncelleme **hiçbir zaman** teklif edilmez —
+bu, yarım/hatalı bir release yayınlandığında istemcilerin sessizce
+doğrulanmamış bir exe çalıştırmasını engeller.
+
+### Yeni sürüm yayınlama süreci
+
+1. `VERSION` dosyasını ve `installer.iss` içindeki `MyAppVersion` /
+   `OutputBaseFilename` değerlerini yeni sürüme güncelle.
+2. Windows'ta `.\build.ps1` çalıştırıp `output\KeepAwakeSetup-vX.Y.Z.exe`
+   dosyasını üret.
+3. GitHub'da bu commit için bir **Release** oluştur, `KeepAwakeSetup-vX.Y.Z.exe`
+   dosyasını release asset olarak yükle, indirme linkini kopyala.
+4. Dosyanın SHA256'sını hesapla (PowerShell: `Get-FileHash
+   output\KeepAwakeSetup-vX.Y.Z.exe -Algorithm SHA256`).
+5. Repo kökündeki `latest.json`'ı güncelle (`version`, `url`, `sha256`, `notes`)
+   ve `main`'e push et.
+
+Adım 5'ten önce eski sürümler hâlâ eski manifesti görür; `latest.json` push
+edilene kadar hiçbir istemci yeni sürümü fark etmez, yani release'i
+yayınlamakla istemcilere duyurmak birbirinden ayrı, kontrollü adımlardır.
