@@ -1,4 +1,8 @@
-# KeepAwake 1.2
+# KeepAwake
+
+A small Windows and Linux/X11 system-tray utility for configurable idle and
+power-management behavior. Includes platform-specific backends, scheduling,
+and an updater. Native Wayland support is limited; see the platform notes below.
 
 Windows ve Linux (X11) için system-tray tabanlı küçük bir güç yönetimi
 uygulaması.
