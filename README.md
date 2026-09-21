@@ -4,6 +4,19 @@ A small Windows and Linux/X11 system-tray utility for configurable idle and
 power-management behavior. Includes platform-specific backends, scheduling,
 and an updater. Native Wayland support is limited; see the platform notes below.
 
+## Engineering overview
+
+Configure when the utility should prevent sleep or generate a small mouse movement after an idle threshold. Scheduling supports selected weekdays, overnight time ranges and temporary pauses.
+
+- **Shared core:** configuration, scheduling and version comparison are separated from operating-system integration.
+- **Native backends:** Windows uses native idle/input/power APIs; Linux uses X11 and `systemd-inhibit`.
+- **Desktop delivery:** tray controls, single-instance behavior, Windows installer and an update flow with SHA-256 verification.
+- **Tests:** core tests run without a desktop; X11 integration tests require a display. A skipped platform test is not a verified platform result.
+
+Start with [core.py](core.py), [Windows integration](backend_windows.py), [Linux integration](backend_linux.py) or [tests](tests/). The detailed Turkish manual below covers setup, packaging and updates. This is an inactive portfolio project; historical version notes remain available as development history.
+
+## Türkçe kullanım ve geliştirme kılavuzu
+
 Windows ve Linux (X11) için system-tray tabanlı küçük bir güç yönetimi
 uygulaması.
 
