@@ -172,3 +172,9 @@ def set_startup_enabled(enabled: bool) -> None:
             winreg.DeleteValue(key, APP_NAME)
     except (FileNotFoundError, OSError):
         pass
+
+
+def show_platform_notification(title: str, message: str) -> bool:
+    """Windows platform notification stub (tray.showMessage manages Windows notifications)."""
+    return False
+

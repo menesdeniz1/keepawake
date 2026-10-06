@@ -1,38 +1,40 @@
 # KeepAwake
 
-A small Windows and Linux/X11 system-tray utility for configurable idle and
+A small Windows, Linux/X11 and macOS system-tray utility for configurable idle and
 power-management behavior. Includes platform-specific backends, scheduling,
-and an updater. Native Wayland support is limited; see the platform notes below.
+an updater, and the UpNow break tracker. Native Wayland support is limited; see the platform notes below.
 
 ## Engineering overview
 
 Configure when the utility should prevent sleep or generate a small mouse movement after an idle threshold. Scheduling supports selected weekdays, overnight time ranges and temporary pauses.
 
-- **Shared core:** configuration, scheduling and version comparison are separated from operating-system integration.
-- **Native backends:** Windows uses native idle/input/power APIs; Linux uses X11 and `systemd-inhibit`.
+- **Shared core:** configuration, scheduling, break tracking and version comparison are separated from operating-system integration.
+- **Native backends:** Windows uses native idle/input/power APIs; Linux uses X11 and `systemd-inhibit`; macOS uses Quartz (ApplicationServices) and `caffeinate`.
 - **Desktop delivery:** tray controls, single-instance behavior, Windows installer and an update flow with SHA-256 verification.
 - **Tests:** core tests run without a desktop; X11 integration tests require a display. A skipped platform test is not a verified platform result.
 
-Start with [core.py](core.py), [Windows integration](backend_windows.py), [Linux integration](backend_linux.py) or [tests](tests/). The detailed Turkish manual below covers setup, packaging and updates. This is an inactive portfolio project; historical version notes remain available as development history.
+Start with [core.py](core.py), [Windows integration](backend_windows.py), [Linux integration](backend_linux.py), [macOS integration](backend_macos.py) or [tests](tests/). The detailed Turkish manual below covers setup, packaging and updates. This is an inactive portfolio project; historical version notes remain available as development history.
 
 ## Türkçe kullanım ve geliştirme kılavuzu
 
-Windows ve Linux (X11) için system-tray tabanlı küçük bir güç yönetimi
-uygulaması.
+Windows, Linux (X11) ve macOS için system-tray tabanlı küçük bir güç yönetimi
+ve mola takip uygulaması.
 
 ## Platform desteği
 
-| Özellik | Windows | Linux (X11) |
-|---|---|---|
-| Idle algılama | `GetLastInputInfo` | MIT-SCREEN-SAVER (python-xlib) |
-| Mouse nudge | `SendInput` | XTest (python-xlib) |
-| Uyku engelleme | `SetThreadExecutionState` | `systemd-inhibit` |
-| Otomatik başlatma | Registry `Run` anahtarı | `~/.config/autostart/*.desktop` |
-| Kurulum paketi | Inno Setup installer | (henüz yok — `python app.py` ile çalıştır) |
+| Özellik | Windows | Linux (X11) | macOS |
+|---|---|---|---|
+| Idle algılama | `GetLastInputInfo` | MIT-SCREEN-SAVER (python-xlib) | `CGEventSourceSecondsSinceLastEventType` (Quartz) |
+| Mouse nudge | `SendInput` | XTest (python-xlib) | `CGEventCreateMouseEvent` (Quartz) |
+| Uyku engelleme | `SetThreadExecutionState` | `systemd-inhibit` | `caffeinate` alt süreci |
+| Otomatik başlatma | Registry `Run` anahtarı | `~/.config/autostart/*.desktop` | `~/Library/LaunchAgents/com.menesdeniz.keepawake.plist` |
+| Kurulum paketi | Inno Setup installer | (henüz yok — `python app.py` ile çalıştır) | (henüz yok — `python app.py` ile çalıştır) |
 
 Platform seçimi `app.py`'de `sys.platform`'a göre otomatik yapılır
-(`backend_windows.py` / `backend_linux.py`); ortak/platform bağımsız mantık
-(`AppConfig`, zamanlama, sürüm karşılaştırma) `core.py`'de yaşar.
+(`backend_windows.py` / `backend_linux.py` / `backend_macos.py`); ortak/platform bağımsız mantık
+(`AppConfig`, zamanlama, sürüm karşılaştırma, `BreakTracker`) `core.py`'de yaşar.
+
+**macOS desteği:** Idle algılama ve fare nudge işlemleri `ApplicationServices` / Quartz API'si üzerinden ctypes ile native olarak yürütülür. Sistem ve ekran uykusunu engelleme `caffeinate -di` alt süreciyle sağlanır. Otomatik başlatma `~/Library/LaunchAgents/` altına `.plist` yazılarak `launchctl` ile entegre edilir.
 
 **Linux kısıtları:** idle algılama ve mouse nudge yalnızca X11'de (XWayland
 dahil) çalışır — native Wayland oturumunda sessizce devre dışı kalır, hata
@@ -45,15 +47,15 @@ Henüz bir `.deb`/AppImage paketi yok; Linux'ta doğrudan
 
 - Windows başlangıcında `--background` ile açılır.
 - Başlangıçta hiçbir ayar penceresi göstermez; direkt system tray'e düşer.
-- Başlat menüsünden elle açılırsa Ayarlar ekranını gösterir.
+- Başlat menüsünden veya dock/spotlight'tan elle açılırsa Ayarlar ekranını gösterir.
 - Penceredeki `X` uygulamayı kapatmaz, tekrar tray'e küçültür.
-- Tray menüsündeki `Çıkış` gerçekten uygulamayı kapatır.
+- Tray menüsündeki `Uygulamadan Çık` gerçekten uygulamayı kapatır.
 - İkinci kez açılırsa ikinci tray ikonu oluşturmaz; mevcut pencereyi öne getirir.
 
 ## Ayarlanabilenler
 
 - Etkin / devre dışı
-- Oturum açılışında otomatik başlat (Windows: Registry, Linux: autostart)
+- Oturum açılışında otomatik başlat (Windows: Registry, Linux: autostart, macOS: LaunchAgents)
 - Idle eşiği: 1-240 dakika
 - Kontrol sıklığı: 1-60 saniye
 - Pazartesi-Pazar gün seçimi
@@ -65,11 +67,41 @@ Henüz bir `.deb`/AppImage paketi yok; Linux'ta doğrudan
 - Tray'den 15 dakika duraklat
 - Tray'den 1 saat duraklat
 - Bugün için duraklat
+- **UpNow Mola Takipçisi:**
+  - Etkin / devre dışı (varsayılan: kapalı)
+  - Çalışma süresi: 1-180 dakika (varsayılan: 50 dk)
+  - Mola süresi: 1-60 dakika (varsayılan: 10 dk)
+  - Mola uyarı modu: Masaüstü bildirimi (`notification`) veya Zorlayıcı pencere (`nagging`)
 
 Ayar dosyası:
 
 - Windows: `%APPDATA%\KeepAwake\config.json`
 - Linux: `$XDG_CONFIG_HOME/KeepAwake/config.json` (tanımlı değilse `~/.config/KeepAwake/config.json`)
+- macOS: `~/.config/KeepAwake/config.json`
+
+## UpNow - Mola Takipçisi
+
+Masa başında uzun süre kesintisiz çalışmayı önlemek ve düzenli mola alışkanlığı kazandırmak için entegre mola takip modülü.
+
+### Temel Özellikler
+
+- **50 dk Çalışma / 10 dk Mola Döngüsü:** Varsayılan olarak 50 dakika kesintisiz çalışma ve 10 dakika dinlenme periyodu uygular. Süreler Ayarlar penceresinden ihtiyaca göre değiştirilebilir.
+- **Mola Sırasında Fare Hareketi (Nudge) Kilidi:** Mola başladığında KeepAwake otomatik fare nudge üretimini kilitler. Bu sayede kullanıcı masadan ayrıldığında bilgisayar yapay olarak uyanık tutulmaz ve güç tasarrufu/ekran kilidi işlevleri normal işler.
+- **İhlal Algılama ve Akıllı Uyarı:** Mola anında kullanıcının bilgisayarda hareket (klavye veya fare) oluşturması durumunda sistem mola ihlali (`break_violation`) durumuna geçer ve kullanıcıyı uyarır. Kullanıcı masadan kalkıp bilgisayarı boş bıraktığında (15 saniye idle eşiği) sistem otomatik olarak normal mola durumuna döner.
+- **İki Farklı Uyarı Modu:**
+  1. *Bildirim Modu (`notification`):* Sistem tepsisi üzerinden standart balon/bildirim mesajı gönderir.
+  2. *Zorlayıcı (Nagging) Pencere Modu (`nagging`):* Ekranın tam ortasında her zaman en üstte (`WindowStaysOnTopHint`) kalan bir uyarı penceresi açılır. Pencere kalan mola süresini dinamik olarak gösterir.
+- **Zorlayıcı Pencere Seçenekleri:**
+  - *Hemen Başla:* Molayı sonlandırıp yeni bir çalışma periyodu başlatır.
+  - *5 Dk Ertele:* Molayı 5 dakika erteler ve çalışma moduna döner.
+  - *Mola Takibini Duraklat:* Mola takipçisini geçici olarak duraklatır.
+  - *Otomatik Kapanma:* Kullanıcı masadan kalkıp bilgisayarı bıraktığında (15 sn idle), uyarı penceresi otomatik kapanır ve mola sayacı arka planda işlemeye devam eder.
+- **Yüzen Canlı Sayaç Kapsülü (Floating Pill):** Mola başladığında ekranın sağ üst köşesinde zarif, yarı saydam ve kompakt bir sayaç kapsülü belirir (`☕ 09:45 | +5 Dk Uzat | 5 Dk Ertele | Acil Bitir | ✕`). Odak çalmaz (`WindowDoesNotAcceptFocus`), ekranın istenen yerine sürüklenebilir, kapatılabilir veya Ayarlar sekmesinden kapatılıp açılabilir. Windows, macOS ve Linux platformlarının tamamında yerel ve akıcı çalışır.
+- **Dinamik Erteleme ve Uzatma Desteği:** Ayarlar penceresinden hem erteleme hem de mola uzatma süreleri (1-60 dk) bağımsız olarak belirlenebilir; bildirimler, floating kapsül ve nagging diyaloğundaki butonlar seçilen süreleri dinamik olarak yansıtır.
+- **Varsayılan Olarak Kapalı (Opt-in):** Mevcut KeepAwake iş akışını bozmamak için özellik varsayılan olarak devre dışıdır.
+- **Tray Menüsünden ve Ayarlar Penceresinden Tam Yönetim:**
+  - *Tray Menüsü:* Anlık mola durumu (ör. `UpNow: 42 dk kaldı`, `Mola: 08:30 kaldı`), "Molayı Başlat", "5 Dk Ertele" ve "Mola Takibini Duraklat / Devam Ettir" eylemleri.
+  - *Ayarlar Penceresi:* Mola Takipçisini Etkinleştir, Çalışma Süresi (dk), Mola Süresi (dk), Erteleme Süresi (dk), Uzatma Süresi (dk), Uyarı Modu ve Canlı Sayaç Kapsülü onay kutusu.
 
 ## Windows ile başlangıç
 
@@ -83,24 +115,24 @@ Bu yüzden Windows oturumu açıldığında ayarlar penceresi önünüze gelmez.
 
 Bu sürüm iki davranışı birbirinden bağımsız ayarlayabilir:
 
-1. Windows native keep-awake:
+1. Platforma özgü keep-awake:
    - sistem uykusunu engeller,
    - ekranın otomatik kapanmasını engeller,
    - seçili çalışma programı boyunca aktif kalır.
 
 2. Mouse nudge:
-   - yalnızca seçili çalışma programı içindeyken,
+   - yalnızca seçili çalışma programı içindeyken ve mola durumunda değilken,
    - kullanıcı `idle_minutes` eşiğine ulaştığında,
    - fareyi 1 piksel sağa ve tekrar sola hareket ettirir.
-   - başarılı input sonrasında Windows'un son-input zamanı yenilendiği için,
+   - başarılı input sonrasında son-input zamanı yenilendiği için,
      bir sonraki nudge yeniden idle eşiği dolduğunda gerçekleşir.
 
-Bu, orijinal betikteki `SendInput(+1) -> 30 ms -> SendInput(-1)`
+Bu, `SendInput(+1) -> 30 ms -> SendInput(-1)` (macOS'ta `CGEventCreateMouseEvent`)
 davranışını uygulamaya taşır.
 
 ## Geliştirme modunda çalıştırma
 
-PowerShell:
+PowerShell (Windows):
 
 ```powershell
 py -3 -m venv .venv
@@ -115,7 +147,7 @@ Tray başlangıcını test etmek için:
 python app.py --background
 ```
 
-Linux'ta (bash):
+Linux ve macOS'ta (bash/zsh):
 
 ```bash
 python3 -m venv .venv
@@ -131,8 +163,9 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
-`core.py` testleri (zamanlama, sürüm karşılaştırma, config) her platformda
-çalışır. `backend_linux.py`'nin idle/mouse-nudge testleri gerçek bir X11
+`core.py` testleri (zamanlama, mola takipçisi, sürüm karşılaştırma, config) her platformda
+çalışır. `backend_macos.py` testleri macOS ortamında CoreGraphics ve caffeinate kontrolü yapar.
+`backend_linux.py`'nin idle/mouse-nudge testleri gerçek bir X11
 bağlantısı ister; X yoksa (ör. headless CI) otomatik `skip` edilir — Xvfb ile
 çalıştırmak için: `Xvfb :99 & DISPLAY=:99 pytest tests/ -v`. `updater.py`
 testleri yerel bir `http.server` fixture'ı kullanır, gerçek ağ erişimi
@@ -231,6 +264,12 @@ Eski v1.1 config dosyaları geriye dönük uyumludur; yeni cooldown alanları yo
 - `tests/` altında gerçek (mock olmayan) bir test paketi eklendi.
 - Eski v1.2 config dosyaları geriye dönük uyumludur; yeni `auto_check_updates`
   alanı yoksa otomatik olarak `true` varsayılanı kullanılır.
+
+## v1.4 - UpNow Mola Takipçisi ve macOS Desteği
+
+- **UpNow Mola Takipçisi:** Masa başı kesintisiz çalışmayı önlemek için 50 dk çalışma / 10 dk mola döngüsü, mola sırasında fare nudge engelleme, hareket algılandığında zorlayıcı pencere veya bildirim uyarıları ve tray menüsü/ayarlar entegrasyonu eklendi.
+- **macOS Desteği:** `ApplicationServices` / Quartz (CoreGraphics) ile native idle algılama ve fare nudge, `caffeinate` ile uyku yönetimi ve LaunchAgents plist ile otomatik başlatma desteği sağlandı (`backend_macos.py`).
+- **Geriye Dönük Uyumluluk:** Eski config dosyaları UpNow kapalı olacak şekilde sorunsuz yüklenir.
 
 ## Otomatik güncelleme
 

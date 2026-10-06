@@ -4,13 +4,16 @@ import tempfile
 from datetime import datetime, timedelta, time as dt_time
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QTime, QObject
+from PySide6.QtCore import QTimer, QTime, QObject, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
+    QDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -18,9 +21,11 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QStyle,
     QSystemTrayIcon,
+    QTabWidget,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
@@ -31,6 +36,8 @@ from core import (
     APP_VERSION,
     DAY_KEYS,
     DAY_LABELS_TR,
+    BreakState,
+    BreakTracker,
     ConfigStore,
     format_duration,
     is_inside_schedule,
@@ -45,6 +52,7 @@ if sys.platform == "win32":
         nudge_mouse,
         set_execution_state,
         set_startup_enabled,
+        show_platform_notification,
     )
 elif sys.platform.startswith("linux"):
     from backend_linux import (
@@ -54,6 +62,17 @@ elif sys.platform.startswith("linux"):
         nudge_mouse,
         set_execution_state,
         set_startup_enabled,
+        show_platform_notification,
+    )
+elif sys.platform == "darwin":
+    from backend_macos import (
+        clear_execution_state,
+        get_idle_seconds,
+        is_startup_enabled,
+        nudge_mouse,
+        set_execution_state,
+        set_startup_enabled,
+        show_platform_notification,
     )
 else:
     print(f"KeepAwake, {sys.platform} platformunu desteklemiyor.")
@@ -104,6 +123,506 @@ class SingleInstance:
         self.server.newConnection.connect(handle_connection)
 
 
+class BreakNagDialog(QDialog):
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowTitle("UpNow - Mola Vakti")
+        self.setMinimumWidth(380)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        self.headline_label = QLabel("Lütfen Masadan Uzaklaşın!")
+        self.headline_label.setObjectName("headline")
+        self.headline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        h_font = self.headline_label.font()
+        h_font.setPointSize(16)
+        h_font.setBold(True)
+        self.headline_label.setFont(h_font)
+        layout.addWidget(self.headline_label)
+
+        hint = QLabel("Gözlerinizi dinlendirin, ayağa kalkın ve esneyin.")
+        hint.setObjectName("hint")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(hint)
+
+        self.countdown_label = QLabel("00:00")
+        self.countdown_label.setObjectName("countdown")
+        self.countdown_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c_font = self.countdown_label.font()
+        c_font.setPointSize(36)
+        c_font.setBold(True)
+        self.countdown_label.setFont(c_font)
+        layout.addWidget(self.countdown_label)
+
+        btn_row = QHBoxLayout()
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
+        self.snooze_btn.clicked.connect(self.on_snooze)
+        btn_row.addWidget(self.snooze_btn)
+
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn = QPushButton(f"{extend_min} Dakika Uzat")
+        self.extend_btn.clicked.connect(self.on_extend)
+        btn_row.addWidget(self.extend_btn)
+
+        self.finish_btn = QPushButton("Acil Durum: Molayı Bitir")
+        self.finish_btn.clicked.connect(self.on_finish)
+        btn_row.addWidget(self.finish_btn)
+
+        # Aliases for compatibility
+        self.snooze_button = self.snooze_btn
+        self.finish_button = self.finish_btn
+        self.headline = self.headline_label
+
+        layout.addLayout(btn_row)
+
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+            }
+            QLabel {
+                color: #cdd6f4;
+            }
+            QLabel#headline {
+                color: #f38ba8;
+            }
+            QLabel#hint {
+                color: #a6adc8;
+            }
+            QLabel#countdown {
+                color: #89b4fa;
+            }
+            QPushButton {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45475a;
+            }
+        """)
+
+    def update_status(self, remaining_text: str):
+        self.countdown_label.setText(remaining_text)
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn.setText(f"{snooze_min} Dakika Ertele")
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn.setText(f"{extend_min} Dakika Uzat")
+
+    def on_snooze(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        if hasattr(self.controller, "snooze_break"):
+            self.controller.snooze_break(snooze_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.snooze(snooze_min)
+        self.hide()
+
+    def on_extend(self):
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        if hasattr(self.controller, "extend_break"):
+            self.controller.extend_break(extend_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_break(extend_min)
+        self.hide()
+
+    def on_finish(self):
+        if hasattr(self.controller, "start_work_now"):
+            self.controller.start_work_now()
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.reset()
+        self.hide()
+
+    def closeEvent(self, event):
+        # Zorlayıcı modda pencere X ile kapanmaz; kullanıcı Ertele veya Molayı Bitir butonuna basmalıdır.
+        event.ignore()
+
+
+class BreakToastNotification(QWidget):
+    """Nazik Mod: Ekranın sağ üst köşesinde zarifçe beliren, odağı çalmayan kayan bildirim kartı."""
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.ToolTip
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self.auto_hide_timer = QTimer(self)
+        self.auto_hide_timer.setSingleShot(True)
+        self.auto_hide_timer.timeout.connect(self.hide)
+
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.card = QFrame(self)
+        self.card.setObjectName("toastCard")
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(14, 12, 14, 12)
+        card_layout.setSpacing(8)
+
+        # Üst satır: Başlık ve Kapatma Çarpısı
+        top_row = QHBoxLayout()
+        self.title_label = QLabel("🔔 UpNow - Mola Vakti", self)
+        self.title_label.setObjectName("toastTitle")
+        t_font = self.title_label.font()
+        t_font.setBold(True)
+        t_font.setPointSize(13)
+        self.title_label.setFont(t_font)
+        top_row.addWidget(self.title_label)
+        top_row.addStretch()
+
+        close_btn = QPushButton("✕", self)
+        close_btn.setObjectName("toastClose")
+        close_btn.setFixedSize(20, 20)
+        close_btn.clicked.connect(self.hide)
+        top_row.addWidget(close_btn)
+        card_layout.addLayout(top_row)
+
+        # Mesaj içeriği
+        self.msg_label = QLabel(self)
+        self.msg_label.setObjectName("toastMsg")
+        self.msg_label.setWordWrap(True)
+        card_layout.addWidget(self.msg_label)
+
+        # Butonlar satırı: [ Ertele ] [ Uzat ] [ Acil Bitir ] / [ Uzat ] [ Tamam ]
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_row.addStretch()
+
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dk Molayı Ertele", self)
+        self.snooze_btn.clicked.connect(self.on_snooze)
+        btn_row.addWidget(self.snooze_btn)
+
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn = QPushButton(f"{extend_min} Dk Molayı Uzat", self)
+        self.extend_btn.clicked.connect(self.on_extend)
+        btn_row.addWidget(self.extend_btn)
+
+        self.emergency_btn = QPushButton("Acil Bitir", self)
+        self.emergency_btn.clicked.connect(self.on_emergency)
+        btn_row.addWidget(self.emergency_btn)
+
+        self.dismiss_btn = QPushButton("Tamam", self)
+        self.dismiss_btn.clicked.connect(self.hide)
+        btn_row.addWidget(self.dismiss_btn)
+
+        card_layout.addLayout(btn_row)
+        outer_layout.addWidget(self.card)
+
+        self.setStyleSheet("""
+            QFrame#toastCard {
+                background-color: #1e1e2e;
+                border: 1px solid #45475a;
+                border-radius: 12px;
+            }
+            QLabel#toastTitle {
+                color: #89b4fa;
+            }
+            QLabel#toastMsg {
+                color: #cdd6f4;
+                font-size: 12px;
+            }
+            QPushButton {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #45475a;
+            }
+            QPushButton#toastClose {
+                border: none;
+                background: transparent;
+                color: #a6adc8;
+                font-size: 12px;
+                padding: 0;
+            }
+            QPushButton#toastClose:hover {
+                color: #f38ba8;
+            }
+        """)
+
+    def on_snooze(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        if callable(getattr(self, "_on_snooze_callback", None)):
+            self._on_snooze_callback(snooze_min)
+        elif hasattr(self.controller, "extend_work"):
+            self.controller.extend_work(snooze_min)
+        elif hasattr(self.controller, "snooze_break"):
+            self.controller.snooze_break(snooze_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.snooze(snooze_min)
+        self.hide()
+
+    def on_extend(self):
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        if callable(getattr(self, "_on_extend_callback", None)):
+            self._on_extend_callback(extend_min)
+        elif hasattr(self.controller, "extend_break"):
+            self.controller.extend_break(extend_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_break(extend_min)
+        self.hide()
+
+    def on_emergency(self):
+        if hasattr(self.controller, "start_work_now"):
+            self.controller.start_work_now()
+        self.hide()
+
+    def reposition(self):
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geom = screen.availableGeometry()
+            width = 440 if (self.extend_btn.isVisible() and self.emergency_btn.isVisible() and self.snooze_btn.isVisible()) else 380
+            height = self.sizeHint().height() or 110
+            x = geom.right() - width - 20
+            y = geom.top() + 40
+            self.setGeometry(x, y, width, height)
+
+    def show_toast(
+        self,
+        title: str,
+        message: str,
+        timeout_seconds: int = 8,
+        snooze_text: str | None = None,
+        on_snooze=None,
+        show_snooze: bool | None = None,
+        extend_text: str | None = None,
+        on_extend=None,
+        show_extend: bool = False,
+        show_emergency: bool = False,
+        dismiss_text: str = "Tamam",
+        show_dismiss: bool | None = None,
+    ):
+        self.title_label.setText(title)
+        self.msg_label.setText(message)
+
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+
+        if show_snooze is None:
+            show_snooze = True if not (show_extend or show_emergency) else False
+
+        if show_dismiss is None:
+            show_dismiss = True
+
+        self.snooze_btn.setText(snooze_text or f"{snooze_min} Dk Molayı Ertele")
+        self.snooze_btn.setVisible(bool(show_snooze))
+        self._on_snooze_callback = on_snooze
+
+        self.extend_btn.setText(extend_text or f"{extend_min} Dk Molayı Uzat")
+        self.extend_btn.setVisible(bool(show_extend))
+        self._on_extend_callback = on_extend
+
+        self.emergency_btn.setText("Acil Bitir")
+        self.emergency_btn.setVisible(bool(show_emergency))
+
+        self.dismiss_btn.setText(dismiss_text)
+        self.dismiss_btn.setVisible(bool(show_dismiss))
+
+        self.adjustSize()
+        self.reposition()
+        self.show()
+        self.auto_hide_timer.start(timeout_seconds * 1000)
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+
+
+class BreakFloatingPill(QWidget):
+    """Mola süresince ekranda yüzen, sürüklenebilir, canlı geri sayım ve hızlı aksiyon kapsülü."""
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.drag_position = None
+        self._custom_position = False
+        self._manually_closed = False
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        outer_layout = QHBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.card = QFrame(self)
+        self.card.setObjectName("pillCard")
+        pill_layout = QHBoxLayout(self.card)
+        pill_layout.setContentsMargins(12, 6, 10, 6)
+        pill_layout.setSpacing(8)
+
+        # 1. Sayaç etiketi: ☕ 04:35
+        self.timer_label = QLabel("☕ 00:00", self.card)
+        self.timer_label.setObjectName("pillTimer")
+        t_font = self.timer_label.font()
+        t_font.setBold(True)
+        t_font.setPointSize(12)
+        self.timer_label.setFont(t_font)
+        pill_layout.addWidget(self.timer_label)
+
+        # Ayırıcı çizgi
+        sep = QFrame(self.card)
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        sep.setStyleSheet("color: #45475a; max-height: 18px;")
+        pill_layout.addWidget(sep)
+
+        # 2. +X Dk Uzat butonu
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn = QPushButton(f"+{extend_min} Dk Uzat", self.card)
+        self.extend_btn.clicked.connect(self.on_extend)
+        pill_layout.addWidget(self.extend_btn)
+
+        # 3. X Dk Ertele butonu
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dk Ertele", self.card)
+        self.snooze_btn.clicked.connect(self.on_snooze)
+        pill_layout.addWidget(self.snooze_btn)
+
+        # 4. Acil Bitir butonu
+        self.emergency_btn = QPushButton("Acil Bitir", self.card)
+        self.emergency_btn.clicked.connect(self.on_emergency)
+        pill_layout.addWidget(self.emergency_btn)
+
+        # 5. Kapatma çarpısı
+        self.close_btn = QPushButton("✕", self.card)
+        self.close_btn.setObjectName("pillClose")
+        self.close_btn.setFixedSize(18, 18)
+        self.close_btn.clicked.connect(self.on_close)
+        pill_layout.addWidget(self.close_btn)
+
+        outer_layout.addWidget(self.card)
+
+        self.setStyleSheet("""
+            QFrame#pillCard {
+                background-color: rgba(30, 30, 46, 0.94);
+                border: 1px solid #45475a;
+                border-radius: 18px;
+            }
+            QLabel#pillTimer {
+                color: #89b4fa;
+                padding-left: 2px;
+            }
+            QPushButton {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 10px;
+                padding: 3px 9px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #45475a;
+                color: #ffffff;
+            }
+            QPushButton#pillClose {
+                border: none;
+                background: transparent;
+                color: #6c7086;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 0;
+            }
+            QPushButton#pillClose:hover {
+                color: #f38ba8;
+            }
+        """)
+
+    def update_status(self, remaining_text: str):
+        self.timer_label.setText(f"☕ {remaining_text}")
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn.setText(f"+{extend_min} Dk Uzat")
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+
+    def on_extend(self):
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        if hasattr(self.controller, "extend_break"):
+            self.controller.extend_break(extend_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_break(extend_min)
+
+    def on_snooze(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        if hasattr(self.controller, "extend_work"):
+            self.controller.extend_work(snooze_min)
+        elif hasattr(self.controller, "snooze_break"):
+            self.controller.snooze_break(snooze_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_work(snooze_min)
+        self.hide()
+
+    def on_emergency(self):
+        if hasattr(self.controller, "start_work_now"):
+            self.controller.start_work_now()
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.reset()
+        self.hide()
+
+    def on_close(self):
+        self._manually_closed = True
+        self.hide()
+
+    def reposition(self):
+        if self._custom_position:
+            return
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geom = screen.availableGeometry()
+            width = self.sizeHint().width() or 380
+            height = self.sizeHint().height() or 38
+            x = geom.right() - width - 20
+            y = geom.top() + 40
+            self.setGeometry(x, y, width, height)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.adjustSize()
+        self.reposition()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_position is not None:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            self._custom_position = True
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.drag_position = None
+        event.accept()
+
+
 class SettingsWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
@@ -116,9 +635,74 @@ class SettingsWindow(QMainWindow):
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
 
+        self.tabs = QTabWidget()
+
+        # --- Sekme 1: Genel Bakış (Dashboard) ---
+        dashboard_scroll = QScrollArea()
+        dashboard_scroll.setWidgetResizable(True)
+        dashboard_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        dashboard_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        dashboard_page = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_page)
+
+        # KeepAwake Özet Kartı
+        self.dash_ka_box = QGroupBox("KeepAwake - Ekran ve Uyku Yönetimi")
+        dash_ka_layout = QVBoxLayout(self.dash_ka_box)
+        self.dash_ka_status = QLabel()
+        self.dash_ka_status.setWordWrap(True)
+        dash_ka_layout.addWidget(self.dash_ka_status)
+
+        dash_ka_actions = QHBoxLayout()
+        self.dash_ka_toggle_btn = QPushButton("Durdur")
+        self.dash_ka_toggle_btn.clicked.connect(self.controller.toggle_keepawake)
+        dash_ka_actions.addWidget(self.dash_ka_toggle_btn)
+        dash_ka_actions.addStretch()
+        dash_ka_layout.addLayout(dash_ka_actions)
+
+        dashboard_layout.addWidget(self.dash_ka_box)
+
+        # UpNow Özet Kartı
+        self.dash_upnow_box = QGroupBox("UpNow - Mola Takipçisi")
+        dash_upnow_layout = QVBoxLayout(self.dash_upnow_box)
+        self.dash_upnow_status = QLabel()
+        self.dash_upnow_status.setWordWrap(True)
+        dash_upnow_layout.addWidget(self.dash_upnow_status)
+
+        dash_upnow_actions = QHBoxLayout()
+        self.dash_upnow_toggle_btn = QPushButton("Durdur")
+        self.dash_upnow_toggle_btn.clicked.connect(self.controller.toggle_upnow)
+        dash_upnow_actions.addWidget(self.dash_upnow_toggle_btn)
+
+        self.dash_start_break_btn = QPushButton("Molayı Şimdi Başlat")
+        self.dash_start_break_btn.clicked.connect(self.controller.toggle_break_or_work)
+        dash_upnow_actions.addWidget(self.dash_start_break_btn)
+
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.dash_snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
+        self.dash_snooze_btn.clicked.connect(lambda: self.controller.snooze_break())
+        dash_upnow_actions.addWidget(self.dash_snooze_btn)
+
+        dash_upnow_actions.addStretch()
+        dash_upnow_layout.addLayout(dash_upnow_actions)
+        dashboard_layout.addWidget(self.dash_upnow_box)
+        dashboard_layout.addStretch()
+
+        dashboard_scroll.setWidget(dashboard_page)
+        self.tabs.addTab(dashboard_scroll, "Genel Bakış")
+
+        # --- Sekme 2: KeepAwake (Uyanık Tutucu) ---
+        keepawake_scroll = QScrollArea()
+        keepawake_scroll.setWidgetResizable(True)
+        keepawake_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        keepawake_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        keepawake_page = QWidget()
+        keepawake_layout = QVBoxLayout(keepawake_page)
+
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        root.addWidget(self.status_label)
+        keepawake_layout.addWidget(self.status_label)
 
         general_box = QGroupBox("Genel")
         general_form = QFormLayout(general_box)
@@ -142,7 +726,7 @@ class SettingsWindow(QMainWindow):
         self.check_spin.setSuffix(" saniye")
         general_form.addRow("Kontrol sıklığı:", self.check_spin)
 
-        root.addWidget(general_box)
+        keepawake_layout.addWidget(general_box)
 
         schedule_box = QGroupBox("Çalışma programı")
         schedule_layout = QVBoxLayout(schedule_box)
@@ -170,7 +754,7 @@ class SettingsWindow(QMainWindow):
         time_form.addRow("Bitiş:", self.end_edit)
         schedule_layout.addLayout(time_form)
 
-        root.addWidget(schedule_box)
+        keepawake_layout.addWidget(schedule_box)
 
         behavior_box = QGroupBox("Güç davranışı")
         behavior_layout = QVBoxLayout(behavior_box)
@@ -181,13 +765,28 @@ class SettingsWindow(QMainWindow):
         self.display_cb = QCheckBox(
             "Ekranın otomatik kapanmasını engelle"
         )
+
+        mouse_row = QHBoxLayout()
+        mouse_row.setContentsMargins(0, 0, 0, 0)
         self.mouse_input_cb = QCheckBox(
             "Idle eşiğine gelince fareyi 1 px sağa/sola hareket ettir"
         )
+        info_badge = QLabel("ⓘ")
+        info_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        info_badge.setStyleSheet("color: gray; font-size: 13px; font-weight: bold; padding-left: 4px;")
+        info_badge.setToolTip(
+            "Fare simülasyonu yalnızca idle eşiğine ulaşıldığında 1 px sağa ve "
+            "tekrar sola mikro hareket üretir.\n"
+            "Bu sayede bilgisayarın kilitlenmesi veya uykuya dalması engellenir.\n"
+            "Başarılı hareket sonrasında sistem belirlenen bekleme aralığında bekler."
+        )
+        mouse_row.addWidget(self.mouse_input_cb)
+        mouse_row.addWidget(info_badge)
+        mouse_row.addStretch()
 
         behavior_layout.addWidget(self.prevent_sleep_cb)
         behavior_layout.addWidget(self.display_cb)
-        behavior_layout.addWidget(self.mouse_input_cb)
+        behavior_layout.addLayout(mouse_row)
 
         cooldown_form = QFormLayout()
 
@@ -200,26 +799,89 @@ class SettingsWindow(QMainWindow):
         self.cooldown_max_spin.setSuffix(" saniye")
 
         cooldown_form.addRow(
-            "Nudge sonrası min. cooldown:",
+            "Hareket sonrası min. bekleme:",
             self.cooldown_min_spin,
         )
         cooldown_form.addRow(
-            "Nudge sonrası maks. cooldown:",
+            "Hareket sonrası maks. bekleme:",
             self.cooldown_max_spin,
         )
         behavior_layout.addLayout(cooldown_form)
 
-        note = QLabel(
-            "Mouse input yalnızca idle eşiğine ulaşıldığında 1 px sağa ve "
-            "tekrar sola hareket üretir. Başarılı nudge sonrasında program, "
-            "belirlediğiniz minimum ve maksimum değerler arasında rastgele "
-            "bir cooldown süresi seçer."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: gray;")
-        behavior_layout.addWidget(note)
+        keepawake_layout.addWidget(behavior_box)
+        keepawake_layout.addStretch()
 
-        root.addWidget(behavior_box)
+        keepawake_scroll.setWidget(keepawake_page)
+        self.tabs.addTab(keepawake_scroll, "KeepAwake (Uyanık Tutucu)")
+
+        # --- Sekme 2: UpNow (Mola Takipçisi) ---
+        upnow_scroll = QScrollArea()
+        upnow_scroll.setWidgetResizable(True)
+        upnow_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        upnow_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        upnow_page = QWidget()
+        upnow_layout = QVBoxLayout(upnow_page)
+
+        self.upnow_status_label = QLabel()
+        self.upnow_status_label.setWordWrap(True)
+        upnow_layout.addWidget(self.upnow_status_label)
+
+        upnow_box = QGroupBox("Mola Takipçisi Ayarları")
+        upnow_form = QFormLayout(upnow_box)
+
+        self.break_enabled_check = QCheckBox("UpNow mola takipçisini etkinleştir")
+        upnow_form.addRow(self.break_enabled_check)
+
+        self.work_duration_spin = QSpinBox()
+        self.work_duration_spin.setRange(1, 180)
+        self.work_duration_spin.setSuffix(" dk")
+        upnow_form.addRow("Çalışma süresi:", self.work_duration_spin)
+
+        self.break_duration_spin = QSpinBox()
+        self.break_duration_spin.setRange(1, 60)
+        self.break_duration_spin.setSuffix(" dk")
+        upnow_form.addRow("Mola süresi:", self.break_duration_spin)
+
+        self.break_snooze_spin = QSpinBox()
+        self.break_snooze_spin.setRange(1, 60)
+        self.break_snooze_spin.setSuffix(" dk")
+        self.break_snooze_spin.valueChanged.connect(self._on_snooze_spin_changed)
+        upnow_form.addRow("Erteleme süresi:", self.break_snooze_spin)
+
+        self.break_extend_spin = QSpinBox()
+        self.break_extend_spin.setRange(1, 60)
+        self.break_extend_spin.setSuffix(" dk")
+        self.break_extend_spin.valueChanged.connect(self._on_extend_spin_changed)
+        upnow_form.addRow("Uzatma süresi:", self.break_extend_spin)
+
+        self.break_alert_combo = QComboBox()
+        self.break_alert_combo.addItem("Nazik Bildirim (Sistem)", "notification")
+        self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
+        upnow_form.addRow("Uyarı modu:", self.break_alert_combo)
+
+        self.break_floating_check = QCheckBox("Mola sırasında ekranda yüzen canlı sayaç kapsülü göster")
+        upnow_form.addRow(self.break_floating_check)
+
+        upnow_layout.addWidget(upnow_box)
+
+        actions_box = QGroupBox("Hızlı Mola Aksiyonları")
+        actions_layout = QHBoxLayout(actions_box)
+        self.tab_start_break_btn = QPushButton("Molayı Şimdi Başlat")
+        self.tab_start_break_btn.clicked.connect(self.controller.toggle_break_or_work)
+        actions_layout.addWidget(self.tab_start_break_btn)
+
+        self.tab_snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
+        self.tab_snooze_btn.clicked.connect(lambda: self.controller.snooze_break())
+        actions_layout.addWidget(self.tab_snooze_btn)
+
+        upnow_layout.addWidget(actions_box)
+        upnow_layout.addStretch()
+
+        upnow_scroll.setWidget(upnow_page)
+        self.tabs.addTab(upnow_scroll, "UpNow (Mola Takipçisi)")
+
+        root.addWidget(self.tabs)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -261,7 +923,68 @@ class SettingsWindow(QMainWindow):
         self.cooldown_min_spin.setValue(config.cooldown_min_seconds)
         self.cooldown_max_spin.setValue(config.cooldown_max_seconds)
 
+        self.break_enabled_check.setChecked(config.break_reminder_enabled)
+        self.work_duration_spin.setValue(config.work_duration_minutes)
+        self.break_duration_spin.setValue(config.break_duration_minutes)
+        self.break_snooze_spin.setValue(config.break_snooze_minutes)
+        self.break_extend_spin.setValue(getattr(config, "break_extend_minutes", 5))
+        self.break_floating_check.setChecked(getattr(config, "break_floating_timer_enabled", True))
+        combo_idx = 1 if config.break_alert_mode == "nagging" else 0
+        self.break_alert_combo.setCurrentIndex(combo_idx)
+
+        self.update_snooze_buttons()
         self.refresh_status()
+
+    def _on_snooze_spin_changed(self, value: int):
+        text = f"{value} Dakika Ertele"
+        if hasattr(self, "dash_snooze_btn"):
+            self.dash_snooze_btn.setText(text)
+        if hasattr(self, "tab_snooze_btn"):
+            self.tab_snooze_btn.setText(text)
+        if getattr(self.controller, "floating_pill", None) is not None:
+            self.controller.floating_pill.snooze_btn.setText(f"{value} Dk Ertele")
+
+    def _on_extend_spin_changed(self, value: int):
+        if getattr(self.controller, "nag_dialog", None) is not None:
+            self.controller.nag_dialog.extend_btn.setText(f"{value} Dakika Uzat")
+        if getattr(self.controller, "floating_pill", None) is not None:
+            self.controller.floating_pill.extend_btn.setText(f"+{value} Dk Uzat")
+
+    def update_snooze_buttons(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        text = f"{snooze_min} Dakika Ertele"
+        if hasattr(self, "dash_snooze_btn"):
+            self.dash_snooze_btn.setText(text)
+        if hasattr(self, "tab_snooze_btn"):
+            self.tab_snooze_btn.setText(text)
+        if getattr(self.controller, "nag_dialog", None) is not None:
+            self.controller.nag_dialog.snooze_btn.setText(text)
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            self.controller.nag_dialog.extend_btn.setText(f"{extend_min} Dakika Uzat")
+        if getattr(self.controller, "floating_pill", None) is not None:
+            self.controller.floating_pill.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            self.controller.floating_pill.extend_btn.setText(f"+{extend_min} Dk Uzat")
+        if getattr(self.controller, "snooze_break_action", None) is not None:
+            self.controller.snooze_break_action.setText(text)
+
+    def save_from_window(self):
+        config = self.controller.config
+        config.break_reminder_enabled = self.break_enabled_check.isChecked()
+        config.work_duration_minutes = self.work_duration_spin.value()
+        config.break_duration_minutes = self.break_duration_spin.value()
+        config.break_snooze_minutes = self.break_snooze_spin.value()
+        config.break_extend_minutes = self.break_extend_spin.value()
+        config.break_floating_timer_enabled = self.break_floating_check.isChecked()
+        selected_data = self.break_alert_combo.currentData()
+        if selected_data:
+            config.break_alert_mode = selected_data
+        else:
+            config.break_alert_mode = (
+                "nagging"
+                if self.break_alert_combo.currentIndex() == 1
+                else "notification"
+            )
 
     def save(self):
         selected_days = [
@@ -291,6 +1014,8 @@ class SettingsWindow(QMainWindow):
         config.keep_display_on = self.display_cb.isChecked()
         config.simulate_mouse_input = self.mouse_input_cb.isChecked()
 
+        self.save_from_window()
+
         cooldown_min = self.cooldown_min_spin.value()
         cooldown_max = self.cooldown_max_spin.value()
 
@@ -315,8 +1040,18 @@ class SettingsWindow(QMainWindow):
             )
             return
 
-        self.controller.store.save(config)
+        try:
+            self.controller.store.save(config)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                APP_NAME,
+                f"Ayarlar kaydedilemedi:\n{exc}",
+            )
+            return
+
         self.controller.apply_config()
+        self.update_snooze_buttons()
         self.refresh_status()
 
         QMessageBox.information(
@@ -326,7 +1061,48 @@ class SettingsWindow(QMainWindow):
         )
 
     def refresh_status(self):
-        self.status_label.setText(self.controller.status_text())
+        ka_text = self.controller.keepawake_status_text()
+        self.status_label.setText(ka_text)
+        if hasattr(self, "dash_ka_status"):
+            self.dash_ka_status.setText(ka_text)
+
+        if hasattr(self, "upnow_status_label"):
+            if not self.controller.config.break_reminder_enabled or self.controller.break_tracker.state == BreakState.DISABLED:
+                up_text = "⚪ Devre dışı"
+            elif self.controller.break_tracker.state == BreakState.PAUSED:
+                up_text = "⏸ Duraklatıldı"
+            elif self.controller.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+                rem = self.controller.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                up_text = f"🔵 Mola: {minutes:02d}:{seconds:02d} kaldı (Masadan Kalk!)"
+            else:
+                from datetime import datetime
+                tracker_status = self.controller.break_tracker.status_text(datetime.now())
+                up_text = f"🟢 {tracker_status}"
+
+            self.upnow_status_label.setText(up_text)
+            if hasattr(self, "dash_upnow_status"):
+                self.dash_upnow_status.setText(up_text)
+
+        on_break = self.controller.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION)
+        break_btn_text = "Molayı Şimdi Bitir" if on_break else "Molayı Şimdi Başlat"
+        if hasattr(self, "dash_start_break_btn"):
+            self.dash_start_break_btn.setText(break_btn_text)
+        if hasattr(self, "tab_start_break_btn"):
+            self.tab_start_break_btn.setText(break_btn_text)
+
+        ka_enabled = self.controller.config.enabled
+        if hasattr(self, "dash_ka_toggle_btn"):
+            self.dash_ka_toggle_btn.setText("Durdur" if ka_enabled else "Başlat")
+
+        up_enabled = self.controller.config.break_reminder_enabled
+        if hasattr(self, "dash_upnow_toggle_btn"):
+            self.dash_upnow_toggle_btn.setText("Durdur" if up_enabled else "Başlat")
+
+        if hasattr(self, "dash_start_break_btn"):
+            self.dash_start_break_btn.setEnabled(up_enabled)
+        if hasattr(self, "dash_snooze_btn"):
+            self.dash_snooze_btn.setEnabled(up_enabled)
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
@@ -341,6 +1117,7 @@ class KeepAwakeController(QObject):
         self.app = app
         self.store = ConfigStore()
         self.config = self.store.load()
+        self.break_tracker = BreakTracker(self.config)
         self.paused_until: datetime | None = None
         self.execution_state_active = False
         self.last_nudge_at: datetime | None = None
@@ -352,6 +1129,9 @@ class KeepAwakeController(QObject):
         self.config.start_with_windows = is_startup_enabled()
 
         self.window = SettingsWindow(self)
+        self.nag_dialog = BreakNagDialog(self)
+        self.toast_notification = BreakToastNotification(self)
+        self.floating_pill = BreakFloatingPill(self)
 
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(
@@ -362,47 +1142,72 @@ class KeepAwakeController(QObject):
 
         self.menu = QMenu()
 
-        self.status_action = QAction("Durum hazırlanıyor…")
-        self.status_action.setEnabled(False)
+        self.open_action = QAction("Uygulamayı Aç", self.menu)
+        font = self.open_action.font()
+        font.setBold(True)
+        self.open_action.setFont(font)
+        self.open_action.triggered.connect(self.show_settings)
+        self.menu.addAction(self.open_action)
+        self.menu.setDefaultAction(self.open_action)
+
+        self.status_action = QAction("Durum hazırlanıyor…", self.menu)
+        self.status_action.triggered.connect(self.show_settings)
         self.menu.addAction(self.status_action)
+
+        self.update_action = QAction("Güncellemeleri Kontrol Et", self.menu)
+        self.update_action.triggered.connect(self.check_for_updates_manual)
+        self.menu.addAction(self.update_action)
 
         self.menu.addSeparator()
 
-        open_action = QAction("Ayarları Aç")
-        open_action.triggered.connect(self.show_settings)
-        self.menu.addAction(open_action)
-
-        update_action = QAction("Güncellemeleri Kontrol Et")
-        update_action.triggered.connect(self.check_for_updates_manual)
-        self.menu.addAction(update_action)
-
-        self.enable_action = QAction("Etkin")
+        self.enable_action = QAction("KeepAwake", self.menu)
         self.enable_action.setCheckable(True)
         self.enable_action.setChecked(self.config.enabled)
         self.enable_action.toggled.connect(self.set_enabled_from_tray)
         self.menu.addAction(self.enable_action)
 
-        pause_15 = QAction("15 Dakika Duraklat")
-        pause_15.triggered.connect(lambda: self.pause_for(15))
-        self.menu.addAction(pause_15)
+        self.pause_15_action = QAction("15 Dakika Duraklat", self.menu)
+        self.pause_15_action.triggered.connect(lambda: self.pause_for(15))
+        self.menu.addAction(self.pause_15_action)
 
-        pause_60 = QAction("1 Saat Duraklat")
-        pause_60.triggered.connect(lambda: self.pause_for(60))
-        self.menu.addAction(pause_60)
+        self.pause_60_action = QAction("1 Saat Duraklat", self.menu)
+        self.pause_60_action.triggered.connect(lambda: self.pause_for(60))
+        self.menu.addAction(self.pause_60_action)
 
-        pause_today = QAction("Bugün İçin Duraklat")
-        pause_today.triggered.connect(self.pause_until_tomorrow)
-        self.menu.addAction(pause_today)
+        self.pause_today_action = QAction("Bugün İçin Duraklat", self.menu)
+        self.pause_today_action.triggered.connect(self.pause_until_tomorrow)
+        self.menu.addAction(self.pause_today_action)
 
-        resume_action = QAction("Duraklatmayı İptal Et")
-        resume_action.triggered.connect(self.resume_now)
-        self.menu.addAction(resume_action)
+        self.resume_action = QAction("Duraklatmayı İptal Et", self.menu)
+        self.resume_action.triggered.connect(self.resume_now)
+        self.menu.addAction(self.resume_action)
 
         self.menu.addSeparator()
 
-        exit_action = QAction("Çıkış")
-        exit_action.triggered.connect(self.quit)
-        self.menu.addAction(exit_action)
+        self.break_action = QAction("UpNow", self.menu)
+        self.break_action.setCheckable(True)
+        self.break_action.setChecked(self.config.break_reminder_enabled)
+        self.break_action.toggled.connect(self.set_break_reminder_enabled_from_tray)
+        self.menu.addAction(self.break_action)
+
+        self.start_break_action = QAction("Molayı Şimdi Başlat", self.menu)
+        self.start_break_action.triggered.connect(self.toggle_break_or_work)
+        self.menu.addAction(self.start_break_action)
+
+        snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+        self.snooze_break_action = QAction(f"{snooze_min} Dakika Ertele", self.menu)
+        self.snooze_break_action.triggered.connect(lambda: self.snooze_break())
+        self.menu.addAction(self.snooze_break_action)
+
+        self.toggle_break_pause_action = QAction("Mola Takibini Duraklat / Devam Ettir", self.menu)
+        self.toggle_break_pause_action.triggered.connect(self.toggle_break_pause)
+        self.menu.addAction(self.toggle_break_pause_action)
+
+        self.menu.addSeparator()
+
+        self.exit_action = QAction("Uygulamadan Çık", self.menu)
+        self.exit_action.triggered.connect(self.quit)
+        self.menu.addAction(self.exit_action)
 
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self.on_tray_activated)
@@ -427,7 +1232,12 @@ class KeepAwakeController(QObject):
         self.tick()
 
     def apply_config(self):
-        interval_ms = max(1, self.config.check_interval_seconds) * 1000
+        # Mola takipçisi etkinken sayacın canlı ve akıcı geri sayması için 1 saniyelik kontrol;
+        # kapalıyken kullanıcının belirlediği check_interval_seconds kullanılır.
+        if self.config.break_reminder_enabled:
+            interval_ms = 1000
+        else:
+            interval_ms = max(1, self.config.check_interval_seconds) * 1000
         self.timer.setInterval(interval_ms)
 
         if not self.timer.isActive():
@@ -438,13 +1248,161 @@ class KeepAwakeController(QObject):
             self.enable_action.setChecked(self.config.enabled)
             self.enable_action.blockSignals(False)
 
+        if (
+            hasattr(self, "break_action")
+            and self.break_action.isChecked() != self.config.break_reminder_enabled
+        ):
+            self.break_action.blockSignals(True)
+            self.break_action.setChecked(self.config.break_reminder_enabled)
+            self.break_action.blockSignals(False)
+
+        if hasattr(self, "snooze_break_action"):
+            self.snooze_break_action.setText(f"{self.config.break_snooze_minutes} Dakika Ertele")
+
+        if hasattr(self, "window") and self.window is not None:
+            self.window.update_snooze_buttons()
+
+        self.break_tracker.update_config(self.config)
         self.tick()
 
     def set_enabled_from_tray(self, checked: bool):
         self.config.enabled = checked
-        self.store.save(self.config)
+        try:
+            self.store.save(self.config)
+        except Exception:
+            pass
         self.window.load_from_config()
         self.tick()
+
+    def set_break_reminder_enabled_from_tray(self, checked: bool):
+        self.config.break_reminder_enabled = checked
+        try:
+            self.store.save(self.config)
+        except Exception:
+            pass
+        self.window.load_from_config()
+        self.apply_config()
+
+    def toggle_keepawake(self):
+        self.set_enabled_from_tray(not self.config.enabled)
+
+    def toggle_upnow(self):
+        self.set_break_reminder_enabled_from_tray(not self.config.break_reminder_enabled)
+
+    def toggle_break_or_work(self):
+        if self.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+            self.start_work_now()
+        else:
+            self.start_break_now()
+
+    def start_break_now(self):
+        self.break_tracker.start_break_now()
+        self.notify_break_started()
+        self.tick()
+
+    def extend_work(self, minutes: int | None = None):
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
+        self.break_tracker.extend_work(minutes)
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            self.nag_dialog.hide()
+        if (
+            getattr(self, "floating_pill", None) is not None
+            and self.floating_pill.isVisible()
+        ):
+            self.floating_pill.hide()
+        title = "UpNow - Mola Ertelendi"
+        msg = f"Mola {minutes} dakika ertelendi, çalışmaya devam ediliyor."
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            show_snooze=False,
+        )
+        self.tick()
+
+    def extend_break(self, minutes: int | None = None):
+        if minutes is None:
+            minutes = getattr(self.config, "break_extend_minutes", 5)
+        self.break_tracker.extend_break(minutes)
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            self.nag_dialog.hide()
+        if getattr(self, "floating_pill", None) is not None:
+            self.floating_pill._manually_closed = False
+            floating_enabled = (
+                getattr(self.config, "break_floating_timer_enabled", True)
+                and self.config.break_reminder_enabled
+            )
+            if floating_enabled:
+                rem = self.break_tracker.remaining_seconds()
+                minutes_val, seconds_val = divmod(rem, 60)
+                self.floating_pill.update_status(f"{minutes_val:02d}:{seconds_val:02d}")
+                if not self.floating_pill.isVisible():
+                    self.floating_pill.show()
+        title = "UpNow - Mola Uzatıldı"
+        msg = f"Mola {minutes} dakika uzatıldı, dinlenmeye devam edebilirsiniz."
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            show_snooze=False,
+        )
+        self.tick()
+
+    def snooze_break(self, minutes: int | None = None):
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
+        self.break_tracker.snooze(minutes)
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            self.nag_dialog.hide()
+        if (
+            getattr(self, "floating_pill", None) is not None
+            and self.floating_pill.isVisible()
+        ):
+            self.floating_pill.hide()
+        title = "UpNow - Mola Ertelendi"
+        msg = f"Mola {minutes} dakika ertelendi."
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            show_snooze=False,
+        )
+        self.tick()
+
+    def start_work_now(self):
+        self.break_tracker.reset()
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            self.nag_dialog.hide()
+        if (
+            getattr(self, "toast_notification", None) is not None
+            and self.toast_notification.isVisible()
+        ):
+            self.toast_notification.hide()
+        if (
+            getattr(self, "floating_pill", None) is not None
+            and self.floating_pill.isVisible()
+        ):
+            self.floating_pill.hide()
+        self.notify_break_finished()
+        self.tick()
+
+    def toggle_break_pause(self):
+        result = self.break_tracker.toggle_pause()
+        self.tick()
+        return result
 
     def pause_for(self, minutes: int):
         self.paused_until = datetime.now() + timedelta(minutes=minutes)
@@ -505,6 +1463,19 @@ class KeepAwakeController(QObject):
         idle = get_idle_seconds()
         active = self.schedule_active(now)
 
+        prev_state = self.break_tracker.state
+        self.break_tracker.tick(now, idle)
+        curr_state = self.break_tracker.state
+
+        if prev_state == BreakState.WORKING and curr_state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+            self.notify_break_started()
+        elif prev_state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION) and curr_state == BreakState.WORKING:
+            self.notify_break_finished()
+
+        if self.break_tracker.should_alert(now):
+            self.trigger_break_alert()
+            self.break_tracker.record_alert(now)
+
         # Orijinal betiğe daha sadık davranış:
         # Güç/ekran keep-awake seçildiyse çalışma programı aktif olduğu sürece
         # işletim sistemine sürekli olarak bu isteği bildir.
@@ -526,10 +1497,12 @@ class KeepAwakeController(QObject):
         # Mouse hareketi ise yalnızca kullanıcı belirlenen idle eşiğine
         # ulaştığında yapılır. Başarılı SendInput son kullanıcı input zamanını
         # yenilediği için bir sonraki nudge yeniden idle eşiği dolunca gelir.
+        # Mola esnasında ise nudge kilitlenir.
         if (
             active
             and self.config.simulate_mouse_input
             and not self.cooldown_active(now)
+            and self.break_tracker.is_nudge_allowed()
             and idle >= self.config.idle_minutes * 60
         ):
             self.last_nudge_ok = nudge_mouse()
@@ -539,6 +1512,42 @@ class KeepAwakeController(QObject):
                 self.begin_post_nudge_cooldown(now)
                 idle = get_idle_seconds()
 
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            if self.break_tracker.state not in (
+                BreakState.ON_BREAK,
+                BreakState.BREAK_VIOLATION,
+            ):
+                self.nag_dialog.hide()
+            else:
+                rem = self.break_tracker.remaining_seconds(now)
+                minutes, seconds = divmod(rem, 60)
+                self.nag_dialog.update_status(f"{minutes:02d}:{seconds:02d}")
+
+        on_break = self.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION)
+        floating_enabled = (
+            getattr(self.config, "break_floating_timer_enabled", True)
+            and self.config.break_reminder_enabled
+        )
+
+        if getattr(self, "floating_pill", None) is not None:
+            if on_break and floating_enabled:
+                rem = self.break_tracker.remaining_seconds(now)
+                minutes, seconds = divmod(rem, 60)
+                self.floating_pill.update_status(f"{minutes:02d}:{seconds:02d}")
+                if not getattr(self.floating_pill, "_manually_closed", False):
+                    if not self.floating_pill.isVisible():
+                        self.floating_pill.show()
+            else:
+                if self.floating_pill.isVisible():
+                    self.floating_pill.hide()
+
+        break_btn_text = "Molayı Şimdi Bitir" if on_break else "Molayı Şimdi Başlat"
+        if hasattr(self, "start_break_action"):
+            self.start_break_action.setText(break_btn_text)
+
         status = self.status_text(now=now, idle=idle)
         self.status_action.setText(status)
         self.tray.setToolTip(f"{APP_NAME}\n{status}")
@@ -546,7 +1555,134 @@ class KeepAwakeController(QObject):
         if self.window is not None:
             self.window.refresh_status()
 
-    def status_text(
+    def show_system_notification(
+        self,
+        title: str,
+        message: str,
+        icon: QSystemTrayIcon.MessageIcon = QSystemTrayIcon.MessageIcon.Information,
+        snooze_text: str | None = None,
+        on_snooze=None,
+        show_snooze: bool | None = None,
+        extend_text: str | None = None,
+        on_extend=None,
+        show_extend: bool = False,
+        show_emergency: bool = False,
+        dismiss_text: str = "Tamam",
+        show_dismiss: bool | None = None,
+    ):
+        # 1. Native platform notification (e.g. macOS osascript, Linux notify-send)
+        try:
+            show_platform_notification(title, message)
+        except Exception:
+            pass
+
+        # 2. Nazik Mod: Ekranın sağ üst köşesinde açılan zarif bildirim kartı
+        if hasattr(self, "toast_notification") and self.toast_notification is not None:
+            try:
+                self.toast_notification.show_toast(
+                    title,
+                    message,
+                    snooze_text=snooze_text,
+                    on_snooze=on_snooze,
+                    show_snooze=show_snooze,
+                    extend_text=extend_text,
+                    on_extend=on_extend,
+                    show_extend=show_extend,
+                    show_emergency=show_emergency,
+                    dismiss_text=dismiss_text,
+                    show_dismiss=show_dismiss,
+                )
+            except Exception:
+                pass
+
+        # 3. Qt tray notification (standard on Windows and Qt-supported tray integrations)
+        if hasattr(self, "tray") and self.tray is not None:
+            try:
+                self.tray.showMessage(title, message, icon, 5000)
+            except Exception:
+                pass
+
+    def notify_break_started(self):
+        duration = self.config.break_duration_minutes
+        title = "UpNow - Mola Vakti"
+        msg = f"Mola vakti! Lütfen masadan kalkın ve dinlenin ({duration} dk)."
+
+        if getattr(self, "floating_pill", None) is not None:
+            self.floating_pill._manually_closed = False
+            floating_enabled = (
+                getattr(self.config, "break_floating_timer_enabled", True)
+                and self.config.break_reminder_enabled
+            )
+            if floating_enabled:
+                rem = self.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                self.floating_pill.update_status(f"{minutes:02d}:{seconds:02d}")
+                if not self.floating_pill.isVisible():
+                    self.floating_pill.show()
+
+        if self.config.break_alert_mode == "nagging":
+            if getattr(self, "nag_dialog", None) is not None:
+                rem = self.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                self.nag_dialog.update_status(f"{minutes:02d}:{seconds:02d}")
+                self.nag_dialog.show()
+                self.nag_dialog.raise_()
+                self.nag_dialog.activateWindow()
+        else:
+            snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+            extend_min = getattr(self.config, "break_extend_minutes", 5)
+            self.show_system_notification(
+                title,
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                snooze_text=f"{snooze_min} Dk Molayı Ertele",
+                on_snooze=lambda m: self.extend_work(m),
+                show_snooze=True,
+                extend_text=f"{extend_min} Dk Molayı Uzat",
+                on_extend=lambda m: self.extend_break(m),
+                show_extend=True,
+                show_emergency=True,
+                show_dismiss=False,
+            )
+
+    def notify_break_finished(self):
+        if getattr(self, "nag_dialog", None) is not None and self.nag_dialog.isVisible():
+            self.nag_dialog.hide()
+        if getattr(self, "toast_notification", None) is not None and self.toast_notification.isVisible():
+            self.toast_notification.hide()
+        if getattr(self, "floating_pill", None) is not None and self.floating_pill.isVisible():
+            self.floating_pill.hide()
+
+        title = "UpNow - Mola Tamamlandı"
+        msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
+        extend_min = getattr(self.config, "break_extend_minutes", 5)
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            extend_text=f"{extend_min} Dk Molayı Uzat",
+            on_extend=lambda m: self.extend_break(m),
+            show_extend=True,
+            show_dismiss=True,
+            dismiss_text="Tamam",
+            show_snooze=False,
+            show_emergency=False,
+        )
+
+    def trigger_break_alert(self):
+        # Yalnızca zorlayıcı (nagging) modda pencereyi öne getirir.
+        # Nazik modda mola başlangıcında bir kere kart çıkar ve kendiliğinden kapanır;
+        # mola süresince kullanıcıya ardışık ihlal bildirimi basılmaz.
+        if self.config.break_alert_mode == "nagging":
+            if getattr(self, "nag_dialog", None) is not None:
+                rem = self.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                self.nag_dialog.update_status(f"{minutes:02d}:{seconds:02d}")
+                self.nag_dialog.show()
+                self.nag_dialog.raise_()
+                self.nag_dialog.activateWindow()
+
+    def keepawake_status_text(
         self,
         now: datetime | None = None,
         idle: float | None = None,
@@ -566,42 +1702,57 @@ class KeepAwakeController(QObject):
         if not is_inside_schedule(self.config, now):
             return "⚪ Program dışı saat"
 
-        parts = ["🟢 Program aktif"]
-
-        if self.config.prevent_sleep or self.config.keep_display_on:
-            if self.execution_state_active:
-                parts.append("keep-awake açık")
-            else:
-                parts.append("keep-awake uygulanamadı")
+        parts = []
 
         if self.config.simulate_mouse_input:
             threshold = self.config.idle_minutes * 60
 
-            if self.cooldown_active(now):
+            if not self.break_tracker.is_nudge_allowed():
+                parts.append("Uyanıklık: duraklatıldı (mola)")
+            elif self.cooldown_active(now):
                 remaining_cd = (self.cooldown_until - now).total_seconds()
                 parts.append(
-                    f"cooldown {format_duration(remaining_cd)}"
+                    f"Uyanıklık: beklemede {format_duration(remaining_cd)}"
                 )
             elif idle < threshold:
                 remaining = threshold - idle
                 parts.append(
-                    f"mouse nudge {format_duration(remaining)} sonra"
+                    f"Uyanıklık: {format_duration(remaining)} sonra"
                 )
             else:
-                parts.append("mouse nudge bekleniyor")
+                parts.append("Uyanıklık: bekleniyor")
 
             if self.last_nudge_at is not None:
                 result = "başarılı" if self.last_nudge_ok else "başarısız"
                 parts.append(
-                    f"son nudge {self.last_nudge_at.strftime('%H:%M:%S')} {result}"
+                    f"son hareket {self.last_nudge_at.strftime('%H:%M:%S')} {result}"
                 )
 
             if self.last_cooldown_seconds is not None:
                 parts.append(
-                    f"son cooldown {self.last_cooldown_seconds:.1f} sn"
+                    f"son bekleme {self.last_cooldown_seconds:.1f} sn"
                 )
+        else:
+            parts.append("Aktif")
 
-        return " · ".join(parts)
+        if self.config.prevent_sleep or self.config.keep_display_on:
+            if not self.execution_state_active:
+                parts.append("keep-awake uygulanamadı")
+
+        return f"🟢 {' · '.join(parts)}"
+
+    def status_text(
+        self,
+        now: datetime | None = None,
+        idle: float | None = None,
+    ) -> str:
+        now = now or datetime.now()
+        ka_text = self.keepawake_status_text(now=now, idle=idle)
+
+        if self.config.break_reminder_enabled or self.break_tracker.state != BreakState.DISABLED:
+            return f"{ka_text} · {self.break_tracker.status_text(now)}"
+
+        return ka_text
 
     def show_settings(self):
         self.window.load_from_config()
@@ -610,11 +1761,15 @@ class KeepAwakeController(QObject):
         self.window.activateWindow()
 
     def on_tray_activated(self, reason):
-        if reason in (
-            QSystemTrayIcon.ActivationReason.DoubleClick,
-            QSystemTrayIcon.ActivationReason.Trigger,
-        ):
-            self.show_settings()
+        if sys.platform != "darwin":
+            if reason in (
+                QSystemTrayIcon.ActivationReason.DoubleClick,
+                QSystemTrayIcon.ActivationReason.Trigger,
+            ):
+                self.show_settings()
+        else:
+            if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+                self.show_settings()
 
     def handle_ipc_command(self, command: str):
         command = command.upper()
@@ -685,6 +1840,8 @@ class KeepAwakeController(QObject):
 
     def quit(self):
         clear_execution_state()
+        if getattr(self, "nag_dialog", None) is not None:
+            self.nag_dialog.hide()
         self.tray.hide()
         self.app.quit()
 

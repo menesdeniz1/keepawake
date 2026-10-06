@@ -177,3 +177,17 @@ def set_startup_enabled(enabled: bool) -> None:
         "NoDisplay=true\n"
     )
     AUTOSTART_FILE.write_text(content, encoding="utf-8")
+
+
+def show_platform_notification(title: str, message: str) -> bool:
+    """Linux üzerinde notify-send kullanarak yerel sistem bildirimi gönderir."""
+    import shutil
+
+    if shutil.which("notify-send"):
+        try:
+            proc = subprocess.run(["notify-send", title, message], check=False, timeout=5)
+            return proc.returncode == 0
+        except Exception:
+            return False
+    return False
+
