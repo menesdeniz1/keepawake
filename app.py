@@ -257,6 +257,14 @@ class SettingsWindow(QMainWindow):
         self.dash_ka_status = QLabel()
         self.dash_ka_status.setWordWrap(True)
         dash_ka_layout.addWidget(self.dash_ka_status)
+
+        dash_ka_actions = QHBoxLayout()
+        self.dash_ka_toggle_btn = QPushButton("Durdur")
+        self.dash_ka_toggle_btn.clicked.connect(self.controller.toggle_keepawake)
+        dash_ka_actions.addWidget(self.dash_ka_toggle_btn)
+        dash_ka_actions.addStretch()
+        dash_ka_layout.addLayout(dash_ka_actions)
+
         dashboard_layout.addWidget(dash_ka_box)
 
         # UpNow Özet Kartı
@@ -275,6 +283,10 @@ class SettingsWindow(QMainWindow):
         self.dash_snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
         self.dash_snooze_btn.clicked.connect(lambda: self.controller.snooze_break())
         dash_upnow_actions.addWidget(self.dash_snooze_btn)
+
+        self.dash_upnow_toggle_btn = QPushButton("Durdur")
+        self.dash_upnow_toggle_btn.clicked.connect(self.controller.toggle_upnow)
+        dash_upnow_actions.addWidget(self.dash_upnow_toggle_btn)
 
         dash_upnow_actions.addStretch()
         dash_upnow_layout.addLayout(dash_upnow_actions)
@@ -648,6 +660,19 @@ class SettingsWindow(QMainWindow):
         if hasattr(self, "tab_start_break_btn"):
             self.tab_start_break_btn.setText(break_btn_text)
 
+        ka_enabled = self.controller.config.enabled
+        if hasattr(self, "dash_ka_toggle_btn"):
+            self.dash_ka_toggle_btn.setText("Durdur" if ka_enabled else "Başlat")
+
+        up_enabled = self.controller.config.break_reminder_enabled
+        if hasattr(self, "dash_upnow_toggle_btn"):
+            self.dash_upnow_toggle_btn.setText("Durdur" if up_enabled else "Başlat")
+
+        if hasattr(self, "dash_start_break_btn"):
+            self.dash_start_break_btn.setEnabled(up_enabled)
+        if hasattr(self, "dash_snooze_btn"):
+            self.dash_snooze_btn.setEnabled(up_enabled)
+
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
         event.ignore()
@@ -809,6 +834,12 @@ class KeepAwakeController(QObject):
         self.store.save(self.config)
         self.window.load_from_config()
         self.apply_config()
+
+    def toggle_keepawake(self):
+        self.set_enabled_from_tray(not self.config.enabled)
+
+    def toggle_upnow(self):
+        self.set_break_reminder_enabled_from_tray(not self.config.break_reminder_enabled)
 
     def toggle_break_or_work(self):
         if self.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):

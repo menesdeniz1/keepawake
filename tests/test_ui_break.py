@@ -110,6 +110,8 @@ def test_settings_window_upnow_fields(controller):
     assert hasattr(win, "dash_upnow_status")
     assert hasattr(win, "dash_start_break_btn")
     assert hasattr(win, "dash_snooze_btn")
+    assert hasattr(win, "dash_ka_toggle_btn")
+    assert hasattr(win, "dash_upnow_toggle_btn")
     assert not hasattr(win, "dash_to_ka_btn")
     assert not hasattr(win, "dash_to_upnow_btn")
     assert hasattr(win, "tab_start_break_btn")
@@ -244,6 +246,48 @@ def test_start_finish_break_button_toggle(controller):
     assert win.dash_start_break_btn.text() == "Molayı Şimdi Başlat"
     assert win.tab_start_break_btn.text() == "Molayı Şimdi Başlat"
     assert controller.start_break_action.text() == "Molayı Şimdi Başlat"
+
+
+def test_dashboard_toggle_buttons(controller):
+    win = controller.window
+
+    # 1. KeepAwake toggle button
+    controller.config.enabled = True
+    controller.apply_config()
+    win.refresh_status()
+
+    assert win.dash_ka_toggle_btn.text() == "Durdur"
+    win.dash_ka_toggle_btn.click()
+    assert controller.config.enabled is False
+    assert win.dash_ka_toggle_btn.text() == "Başlat"
+    assert win.dash_ka_status.text() == "⚪ Devre dışı"
+
+    win.dash_ka_toggle_btn.click()
+    assert controller.config.enabled is True
+    assert win.dash_ka_toggle_btn.text() == "Durdur"
+
+    # 2. UpNow toggle button
+    controller.config.break_reminder_enabled = True
+    controller.apply_config()
+    win.refresh_status()
+
+    assert win.dash_upnow_toggle_btn.text() == "Durdur"
+    assert win.dash_start_break_btn.isEnabled() is True
+    assert win.dash_snooze_btn.isEnabled() is True
+
+    win.dash_upnow_toggle_btn.click()
+    assert controller.config.break_reminder_enabled is False
+    assert win.dash_upnow_toggle_btn.text() == "Başlat"
+    assert win.dash_upnow_status.text() == "⚪ Devre dışı"
+    assert win.dash_start_break_btn.isEnabled() is False
+    assert win.dash_snooze_btn.isEnabled() is False
+
+    win.dash_upnow_toggle_btn.click()
+    assert controller.config.break_reminder_enabled is True
+    assert win.dash_upnow_toggle_btn.text() == "Durdur"
+    assert win.dash_start_break_btn.isEnabled() is True
+    assert win.dash_snooze_btn.isEnabled() is True
+
 
 
 
