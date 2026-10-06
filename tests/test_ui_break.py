@@ -24,11 +24,14 @@ def controller(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr("app.set_startup_enabled", lambda val: None)
     monkeypatch.setattr("app.set_execution_state", lambda *a, **kw: True)
     monkeypatch.setattr("app.clear_execution_state", lambda: None)
+    monkeypatch.setattr("app.nudge_mouse", lambda: True)
 
     import app as ka
 
     ctrl = ka.KeepAwakeController(qapp)
     ctrl.timer.stop()
+    ctrl.cooldown_until = None
+    ctrl.last_nudge_at = None
     ctrl.config.auto_check_updates = False
     ctrl.config.start_time = "00:00"
     ctrl.config.end_time = "23:59"

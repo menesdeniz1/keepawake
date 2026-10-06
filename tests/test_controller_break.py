@@ -23,12 +23,15 @@ def controller(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr("app.set_startup_enabled", lambda val: None)
     monkeypatch.setattr("app.set_execution_state", lambda *a, **kw: True)
     monkeypatch.setattr("app.clear_execution_state", lambda: None)
+    monkeypatch.setattr("app.nudge_mouse", lambda: True)
 
     import app as ka
 
     ctrl = ka.KeepAwakeController(qapp)
     # Stop timer and auto update to keep test synchronous and hermetic
     ctrl.timer.stop()
+    ctrl.cooldown_until = None
+    ctrl.last_nudge_at = None
     ctrl.config.auto_check_updates = False
     ctrl.config.start_time = "00:00"
     ctrl.config.end_time = "23:59"
@@ -95,6 +98,7 @@ def test_controller_allows_nudge_during_working(controller, monkeypatch):
     controller.config.simulate_mouse_input = True
     controller.config.idle_minutes = 1
     controller.config.break_reminder_enabled = True
+    controller.cooldown_until = None
     now = datetime.now()
     controller.break_tracker.reset(now=now)
     assert controller.break_tracker.state == BreakState.WORKING
