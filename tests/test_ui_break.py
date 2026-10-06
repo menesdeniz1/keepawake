@@ -498,3 +498,53 @@ def test_toast_snooze_actions_extend_work_and_break(controller):
     controller.toast_notification.hide()
 
 
+def test_break_floating_pill_properties_and_actions(controller, monkeypatch):
+    import app as ka
+
+    assert hasattr(ka, "BreakFloatingPill"), "BreakFloatingPill class should be defined in app.py"
+
+    pill = ka.BreakFloatingPill(controller)
+    try:
+        flags = pill.windowFlags()
+        assert bool(flags & Qt.WindowType.FramelessWindowHint)
+        assert bool(flags & Qt.WindowType.WindowStaysOnTopHint)
+        assert bool(flags & Qt.WindowType.Tool)
+        assert bool(flags & Qt.WindowType.WindowDoesNotAcceptFocus)
+        assert pill.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        assert hasattr(pill, "timer_label")
+        assert hasattr(pill, "extend_btn")
+        assert hasattr(pill, "snooze_btn")
+        assert hasattr(pill, "emergency_btn")
+        assert hasattr(pill, "close_btn")
+
+        pill.update_status("04:35")
+        assert "04:35" in pill.timer_label.text()
+
+        # Test extend_btn click calls controller.extend_break
+        extend_mock = MagicMock()
+        monkeypatch.setattr(controller, "extend_break", extend_mock)
+        pill.extend_btn.click()
+        extend_mock.assert_called_once()
+
+        # Test snooze_btn click calls controller.extend_work
+        snooze_mock = MagicMock()
+        monkeypatch.setattr(controller, "extend_work", snooze_mock)
+        pill.snooze_btn.click()
+        snooze_mock.assert_called_once()
+
+        # Test emergency_btn click calls controller.start_work_now
+        finish_mock = MagicMock()
+        monkeypatch.setattr(controller, "start_work_now", finish_mock)
+        pill.emergency_btn.click()
+        finish_mock.assert_called_once()
+
+        # Test close_btn hides pill
+        pill.show()
+        assert pill.isVisible()
+        pill.close_btn.click()
+        assert not pill.isVisible()
+    finally:
+        pill.hide()
+
+

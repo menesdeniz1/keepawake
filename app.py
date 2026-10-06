@@ -449,6 +449,175 @@ class BreakToastNotification(QWidget):
         self.hide()
 
 
+class BreakFloatingPill(QWidget):
+    """Mola süresince ekranda yüzen, sürüklenebilir, canlı geri sayım ve hızlı aksiyon kapsülü."""
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.drag_position = None
+        self._custom_position = False
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        outer_layout = QHBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.card = QFrame(self)
+        self.card.setObjectName("pillCard")
+        pill_layout = QHBoxLayout(self.card)
+        pill_layout.setContentsMargins(12, 6, 10, 6)
+        pill_layout.setSpacing(8)
+
+        # 1. Sayaç etiketi: ☕ 04:35
+        self.timer_label = QLabel("☕ 00:00", self.card)
+        self.timer_label.setObjectName("pillTimer")
+        t_font = self.timer_label.font()
+        t_font.setBold(True)
+        t_font.setPointSize(12)
+        self.timer_label.setFont(t_font)
+        pill_layout.addWidget(self.timer_label)
+
+        # Ayırıcı çizgi
+        sep = QFrame(self.card)
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        sep.setStyleSheet("color: #45475a; max-height: 18px;")
+        pill_layout.addWidget(sep)
+
+        # 2. +X Dk Uzat butonu
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn = QPushButton(f"+{extend_min} Dk Uzat", self.card)
+        self.extend_btn.clicked.connect(self.on_extend)
+        pill_layout.addWidget(self.extend_btn)
+
+        # 3. X Dk Ertele butonu
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dk Ertele", self.card)
+        self.snooze_btn.clicked.connect(self.on_snooze)
+        pill_layout.addWidget(self.snooze_btn)
+
+        # 4. Acil Bitir butonu
+        self.emergency_btn = QPushButton("Acil Bitir", self.card)
+        self.emergency_btn.clicked.connect(self.on_emergency)
+        pill_layout.addWidget(self.emergency_btn)
+
+        # 5. Kapatma çarpısı
+        self.close_btn = QPushButton("✕", self.card)
+        self.close_btn.setObjectName("pillClose")
+        self.close_btn.setFixedSize(18, 18)
+        self.close_btn.clicked.connect(self.hide)
+        pill_layout.addWidget(self.close_btn)
+
+        outer_layout.addWidget(self.card)
+
+        self.setStyleSheet("""
+            QFrame#pillCard {
+                background-color: rgba(30, 30, 46, 0.94);
+                border: 1px solid #45475a;
+                border-radius: 18px;
+            }
+            QLabel#pillTimer {
+                color: #89b4fa;
+                padding-left: 2px;
+            }
+            QPushButton {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 10px;
+                padding: 3px 9px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #45475a;
+                color: #ffffff;
+            }
+            QPushButton#pillClose {
+                border: none;
+                background: transparent;
+                color: #6c7086;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 0;
+            }
+            QPushButton#pillClose:hover {
+                color: #f38ba8;
+            }
+        """)
+
+    def update_status(self, remaining_text: str):
+        self.timer_label.setText(f"☕ {remaining_text}")
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn.setText(f"+{extend_min} Dk Uzat")
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+
+    def on_extend(self):
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        if hasattr(self.controller, "extend_break"):
+            self.controller.extend_break(extend_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_break(extend_min)
+
+    def on_snooze(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        if hasattr(self.controller, "extend_work"):
+            self.controller.extend_work(snooze_min)
+        elif hasattr(self.controller, "snooze_break"):
+            self.controller.snooze_break(snooze_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_work(snooze_min)
+        self.hide()
+
+    def on_emergency(self):
+        if hasattr(self.controller, "start_work_now"):
+            self.controller.start_work_now()
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.reset()
+        self.hide()
+
+    def reposition(self):
+        if self._custom_position:
+            return
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geom = screen.availableGeometry()
+            width = self.sizeHint().width() or 380
+            height = self.sizeHint().height() or 38
+            x = geom.right() - width - 20
+            y = geom.top() + 40
+            self.setGeometry(x, y, width, height)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.adjustSize()
+        self.reposition()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_position is not None:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            self._custom_position = True
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.drag_position = None
+        event.accept()
+
+
 class SettingsWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
