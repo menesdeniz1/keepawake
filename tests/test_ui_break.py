@@ -98,15 +98,9 @@ def test_settings_window_upnow_fields(controller):
     assert hasattr(win, "break_duration_spin")
     assert hasattr(win, "break_alert_combo")
 
-    assert hasattr(win, "tabs")
-    assert win.tabs.count() == 2
-    assert "KeepAwake" in win.tabs.tabText(0)
-    assert "UpNow" in win.tabs.tabText(1)
-    assert hasattr(win, "ka_badge")
-    assert hasattr(win, "upnow_badge")
-    assert hasattr(win, "upnow_status_label")
-    assert hasattr(win, "tab_start_break_btn")
-    assert hasattr(win, "tab_snooze_btn")
+    assert hasattr(win, "status_label")
+    assert hasattr(win, "save_button")
+    assert hasattr(win, "hide_button")
 
 
 def test_settings_window_load_and_save(controller, monkeypatch):
