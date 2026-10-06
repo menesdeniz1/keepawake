@@ -545,12 +545,18 @@ class SettingsWindow(QMainWindow):
     def refresh_status(self):
         self.status_label.setText(self.controller.status_text())
         if hasattr(self, "upnow_status_label"):
-            if self.controller.config.break_reminder_enabled:
+            if not self.controller.config.break_reminder_enabled or self.controller.break_tracker.state == BreakState.DISABLED:
+                self.upnow_status_label.setText("⚪ Devre dışı")
+            elif self.controller.break_tracker.state == BreakState.PAUSED:
+                self.upnow_status_label.setText("⏸ Duraklatıldı")
+            elif self.controller.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+                rem = self.controller.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                self.upnow_status_label.setText(f"🔵 Mola: {minutes:02d}:{seconds:02d} kaldı (Masadan Kalk!)")
+            else:
                 from datetime import datetime
                 tracker_status = self.controller.break_tracker.status_text(datetime.now())
-                self.upnow_status_label.setText(f"UpNow Durumu: {tracker_status}")
-            else:
-                self.upnow_status_label.setText("UpNow Mola Takipçisi şu anda devre dışı.")
+                self.upnow_status_label.setText(f"🟢 {tracker_status}")
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
