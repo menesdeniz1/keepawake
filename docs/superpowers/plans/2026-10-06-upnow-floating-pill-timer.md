@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.14, PySide6 (Qt6 Widgets, FramelessWindow, TranslucentBackground), pytest, macOS/Win/Linux cross-platform.
 
-**Spec:** [docs/superpowers/specs/2026-10-06-upnow-floating-pill-timer-design.md](file:///Users/enes/Downloads/myprojects/keepawake/docs/superpowers/specs/2026-10-06-upnow-floating-pill-timer-design.md)
+**Spec:** [docs/superpowers/specs/2026-10-06-upnow-floating-pill-timer-design.md](../specs/2026-10-06-upnow-floating-pill-timer-design.md)
 
 ## Global Constraints
 
