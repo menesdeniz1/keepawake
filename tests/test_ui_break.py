@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton
 
 from core import APP_NAME, AppConfig, BreakState
 
@@ -270,6 +270,10 @@ def test_dashboard_toggle_buttons(controller):
     controller.config.break_reminder_enabled = True
     controller.apply_config()
     win.refresh_status()
+
+    # Verify button order: Durdur/Başlat is first (leftmost)
+    upnow_buttons = win.dash_upnow_box.findChildren(QPushButton)
+    assert upnow_buttons == [win.dash_upnow_toggle_btn, win.dash_start_break_btn, win.dash_snooze_btn]
 
     assert win.dash_upnow_toggle_btn.text() == "Durdur"
     assert win.dash_start_break_btn.isEnabled() is True

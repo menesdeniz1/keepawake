@@ -252,8 +252,8 @@ class SettingsWindow(QMainWindow):
         dashboard_layout = QVBoxLayout(dashboard_page)
 
         # KeepAwake Özet Kartı
-        dash_ka_box = QGroupBox("KeepAwake - Ekran ve Uyku Yönetimi")
-        dash_ka_layout = QVBoxLayout(dash_ka_box)
+        self.dash_ka_box = QGroupBox("KeepAwake - Ekran ve Uyku Yönetimi")
+        dash_ka_layout = QVBoxLayout(self.dash_ka_box)
         self.dash_ka_status = QLabel()
         self.dash_ka_status.setWordWrap(True)
         dash_ka_layout.addWidget(self.dash_ka_status)
@@ -265,16 +265,20 @@ class SettingsWindow(QMainWindow):
         dash_ka_actions.addStretch()
         dash_ka_layout.addLayout(dash_ka_actions)
 
-        dashboard_layout.addWidget(dash_ka_box)
+        dashboard_layout.addWidget(self.dash_ka_box)
 
         # UpNow Özet Kartı
-        dash_upnow_box = QGroupBox("UpNow - Mola & Ayakta Kalma Takipçisi")
-        dash_upnow_layout = QVBoxLayout(dash_upnow_box)
+        self.dash_upnow_box = QGroupBox("UpNow - Mola & Ayakta Kalma Takipçisi")
+        dash_upnow_layout = QVBoxLayout(self.dash_upnow_box)
         self.dash_upnow_status = QLabel()
         self.dash_upnow_status.setWordWrap(True)
         dash_upnow_layout.addWidget(self.dash_upnow_status)
 
         dash_upnow_actions = QHBoxLayout()
+        self.dash_upnow_toggle_btn = QPushButton("Durdur")
+        self.dash_upnow_toggle_btn.clicked.connect(self.controller.toggle_upnow)
+        dash_upnow_actions.addWidget(self.dash_upnow_toggle_btn)
+
         self.dash_start_break_btn = QPushButton("Molayı Şimdi Başlat")
         self.dash_start_break_btn.clicked.connect(self.controller.toggle_break_or_work)
         dash_upnow_actions.addWidget(self.dash_start_break_btn)
@@ -284,13 +288,9 @@ class SettingsWindow(QMainWindow):
         self.dash_snooze_btn.clicked.connect(lambda: self.controller.snooze_break())
         dash_upnow_actions.addWidget(self.dash_snooze_btn)
 
-        self.dash_upnow_toggle_btn = QPushButton("Durdur")
-        self.dash_upnow_toggle_btn.clicked.connect(self.controller.toggle_upnow)
-        dash_upnow_actions.addWidget(self.dash_upnow_toggle_btn)
-
         dash_upnow_actions.addStretch()
         dash_upnow_layout.addLayout(dash_upnow_actions)
-        dashboard_layout.addWidget(dash_upnow_box)
+        dashboard_layout.addWidget(self.dash_upnow_box)
         dashboard_layout.addStretch()
 
         dashboard_scroll.setWidget(dashboard_page)
