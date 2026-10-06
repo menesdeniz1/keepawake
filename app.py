@@ -238,7 +238,61 @@ class SettingsWindow(QMainWindow):
 
         self.tabs = QTabWidget()
 
-        # --- Sekme 1: KeepAwake (Uyanık Tutucu) ---
+        # --- Sekme 1: Genel Bakış (Dashboard) ---
+        dashboard_scroll = QScrollArea()
+        dashboard_scroll.setWidgetResizable(True)
+        dashboard_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        dashboard_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        dashboard_page = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_page)
+
+        # KeepAwake Özet Kartı
+        dash_ka_box = QGroupBox("KeepAwake - Ekran ve Uyku Yönetimi")
+        dash_ka_layout = QVBoxLayout(dash_ka_box)
+        self.dash_ka_status = QLabel()
+        self.dash_ka_status.setWordWrap(True)
+        dash_ka_layout.addWidget(self.dash_ka_status)
+
+        dash_ka_btn_row = QHBoxLayout()
+        dash_ka_btn_row.addStretch()
+        self.dash_to_ka_btn = QPushButton("KeepAwake Ayarları →")
+        self.dash_to_ka_btn.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
+        dash_ka_btn_row.addWidget(self.dash_to_ka_btn)
+        dash_ka_layout.addLayout(dash_ka_btn_row)
+
+        dashboard_layout.addWidget(dash_ka_box)
+
+        # UpNow Özet Kartı
+        dash_upnow_box = QGroupBox("UpNow - Mola & Ayakta Kalma Takipçisi")
+        dash_upnow_layout = QVBoxLayout(dash_upnow_box)
+        self.dash_upnow_status = QLabel()
+        self.dash_upnow_status.setWordWrap(True)
+        dash_upnow_layout.addWidget(self.dash_upnow_status)
+
+        dash_upnow_actions = QHBoxLayout()
+        self.dash_start_break_btn = QPushButton("Molayı Şimdi Başlat")
+        self.dash_start_break_btn.clicked.connect(self.controller.start_break_now)
+        dash_upnow_actions.addWidget(self.dash_start_break_btn)
+
+        self.dash_snooze_btn = QPushButton("5 Dakika Ertele")
+        self.dash_snooze_btn.clicked.connect(lambda: self.controller.snooze_break(5))
+        dash_upnow_actions.addWidget(self.dash_snooze_btn)
+
+        dash_upnow_actions.addStretch()
+
+        self.dash_to_upnow_btn = QPushButton("UpNow Ayarları →")
+        self.dash_to_upnow_btn.clicked.connect(lambda: self.tabs.setCurrentIndex(2))
+        dash_upnow_actions.addWidget(self.dash_to_upnow_btn)
+
+        dash_upnow_layout.addLayout(dash_upnow_actions)
+        dashboard_layout.addWidget(dash_upnow_box)
+        dashboard_layout.addStretch()
+
+        dashboard_scroll.setWidget(dashboard_page)
+        self.tabs.addTab(dashboard_scroll, "Genel Bakış")
+
+        # --- Sekme 2: KeepAwake (Uyanık Tutucu) ---
         keepawake_scroll = QScrollArea()
         keepawake_scroll.setWidgetResizable(True)
         keepawake_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -543,20 +597,28 @@ class SettingsWindow(QMainWindow):
         )
 
     def refresh_status(self):
-        self.status_label.setText(self.controller.status_text())
+        ka_text = self.controller.status_text()
+        self.status_label.setText(ka_text)
+        if hasattr(self, "dash_ka_status"):
+            self.dash_ka_status.setText(ka_text)
+
         if hasattr(self, "upnow_status_label"):
             if not self.controller.config.break_reminder_enabled or self.controller.break_tracker.state == BreakState.DISABLED:
-                self.upnow_status_label.setText("⚪ Devre dışı")
+                up_text = "⚪ Devre dışı"
             elif self.controller.break_tracker.state == BreakState.PAUSED:
-                self.upnow_status_label.setText("⏸ Duraklatıldı")
+                up_text = "⏸ Duraklatıldı"
             elif self.controller.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
                 rem = self.controller.break_tracker.remaining_seconds()
                 minutes, seconds = divmod(rem, 60)
-                self.upnow_status_label.setText(f"🔵 Mola: {minutes:02d}:{seconds:02d} kaldı (Masadan Kalk!)")
+                up_text = f"🔵 Mola: {minutes:02d}:{seconds:02d} kaldı (Masadan Kalk!)"
             else:
                 from datetime import datetime
                 tracker_status = self.controller.break_tracker.status_text(datetime.now())
-                self.upnow_status_label.setText(f"🟢 {tracker_status}")
+                up_text = f"🟢 {tracker_status}"
+
+            self.upnow_status_label.setText(up_text)
+            if hasattr(self, "dash_upnow_status"):
+                self.dash_upnow_status.setText(up_text)
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
