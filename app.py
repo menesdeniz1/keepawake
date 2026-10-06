@@ -231,6 +231,145 @@ class BreakNagDialog(QDialog):
         self.hide()
 
 
+class BreakToastNotification(QDialog):
+    """Nazik Mod: Ekranın sağ üst köşesinde zarifçe beliren, odağı çalmayan kayan bildirim kartı."""
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self.auto_hide_timer = QTimer(self)
+        self.auto_hide_timer.setSingleShot(True)
+        self.auto_hide_timer.timeout.connect(self.hide)
+
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.card = QFrame(self)
+        self.card.setObjectName("toastCard")
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(14, 12, 14, 12)
+        card_layout.setSpacing(8)
+
+        # Üst satır: Başlık ve Kapatma Çarpısı
+        top_row = QHBoxLayout()
+        self.title_label = QLabel("🔔 UpNow - Mola Zamanı", self)
+        self.title_label.setObjectName("toastTitle")
+        t_font = self.title_label.font()
+        t_font.setBold(True)
+        t_font.setPointSize(13)
+        self.title_label.setFont(t_font)
+        top_row.addWidget(self.title_label)
+        top_row.addStretch()
+
+        close_btn = QPushButton("✕", self)
+        close_btn.setObjectName("toastClose")
+        close_btn.setFixedSize(20, 20)
+        close_btn.clicked.connect(self.hide)
+        top_row.addWidget(close_btn)
+        card_layout.addLayout(top_row)
+
+        # Mesaj içeriği
+        self.msg_label = QLabel(self)
+        self.msg_label.setObjectName("toastMsg")
+        self.msg_label.setWordWrap(True)
+        card_layout.addWidget(self.msg_label)
+
+        # Butonlar satırı: [ X Dk Ertele ] [ Tamam ]
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dk Ertele", self)
+        self.snooze_btn.clicked.connect(self.on_snooze)
+        btn_row.addWidget(self.snooze_btn)
+
+        self.dismiss_btn = QPushButton("Tamam", self)
+        self.dismiss_btn.clicked.connect(self.hide)
+        btn_row.addWidget(self.dismiss_btn)
+
+        card_layout.addLayout(btn_row)
+        outer_layout.addWidget(self.card)
+
+        self.setStyleSheet("""
+            QFrame#toastCard {
+                background-color: #1e1e2e;
+                border: 1px solid #45475a;
+                border-radius: 12px;
+            }
+            QLabel#toastTitle {
+                color: #89b4fa;
+            }
+            QLabel#toastMsg {
+                color: #cdd6f4;
+                font-size: 12px;
+            }
+            QPushButton {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #45475a;
+            }
+            QPushButton#toastClose {
+                border: none;
+                background: transparent;
+                color: #a6adc8;
+                font-size: 12px;
+                padding: 0;
+            }
+            QPushButton#toastClose:hover {
+                color: #f38ba8;
+            }
+        """)
+
+    def on_snooze(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        if hasattr(self.controller, "snooze_break"):
+            self.controller.snooze_break(snooze_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.snooze(snooze_min)
+        self.hide()
+
+    def reposition(self):
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geom = screen.availableGeometry()
+            width = 340
+            height = self.sizeHint().height() or 110
+            x = geom.right() - width - 20
+            y = geom.top() + 40
+            self.setGeometry(x, y, width, height)
+
+    def show_toast(self, title: str, message: str, timeout_seconds: int = 8):
+        self.title_label.setText(title)
+        self.msg_label.setText(message)
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+        self.adjustSize()
+        self.reposition()
+        self.show()
+        self.raise_()
+        self.auto_hide_timer.start(timeout_seconds * 1000)
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+
+
 class SettingsWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
@@ -702,6 +841,7 @@ class KeepAwakeController(QObject):
 
         self.window = SettingsWindow(self)
         self.nag_dialog = BreakNagDialog(self)
+        self.toast_notification = BreakToastNotification(self)
 
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(
@@ -798,7 +938,12 @@ class KeepAwakeController(QObject):
         self.tick()
 
     def apply_config(self):
-        interval_ms = max(1, self.config.check_interval_seconds) * 1000
+        # Mola takipçisi etkinken sayacın canlı ve akıcı geri sayması için 1 saniyelik kontrol;
+        # kapalıyken kullanıcının belirlediği check_interval_seconds kullanılır.
+        if self.config.break_reminder_enabled:
+            interval_ms = 1000
+        else:
+            interval_ms = max(1, self.config.check_interval_seconds) * 1000
         self.timer.setInterval(interval_ms)
 
         if not self.timer.isActive():
@@ -876,6 +1021,11 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
+        if (
+            getattr(self, "toast_notification", None) is not None
+            and self.toast_notification.isVisible()
+        ):
+            self.toast_notification.hide()
         self.notify_break_finished()
         self.tick()
 
@@ -1030,7 +1180,14 @@ class KeepAwakeController(QObject):
         except Exception:
             pass
 
-        # 2. Qt tray notification (standard on Windows and Qt-supported tray integrations)
+        # 2. Nazik Mod: Ekranın sağ üst köşesinde açılan zarif bildirim kartı
+        if hasattr(self, "toast_notification") and self.toast_notification is not None:
+            try:
+                self.toast_notification.show_toast(title, message)
+            except Exception:
+                pass
+
+        # 3. Qt tray notification (standard on Windows and Qt-supported tray integrations)
         if hasattr(self, "tray") and self.tray is not None:
             try:
                 self.tray.showMessage(title, message, icon, 5000)
@@ -1056,6 +1213,8 @@ class KeepAwakeController(QObject):
     def notify_break_finished(self):
         if getattr(self, "nag_dialog", None) is not None and self.nag_dialog.isVisible():
             self.nag_dialog.hide()
+        if getattr(self, "toast_notification", None) is not None and self.toast_notification.isVisible():
+            self.toast_notification.hide()
 
         title = f"{APP_NAME} - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"

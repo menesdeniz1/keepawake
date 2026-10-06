@@ -158,7 +158,7 @@ def test_break_tracker_status_text():
     start_time = datetime(2026, 10, 6, 10, 0, 0)
     tracker = BreakTracker(config, now=start_time)
 
-    assert "Odaklanma: 50 dk kaldı" in tracker.status_text(now=start_time)
+    assert "Odaklanma: 50:00 kaldı" in tracker.status_text(now=start_time)
 
     # In break
     break_time = start_time + timedelta(minutes=50, seconds=1)

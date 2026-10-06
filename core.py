@@ -186,10 +186,14 @@ class BreakTracker:
 
         rem = self.remaining_seconds(now)
         if self.state == BreakState.WORKING:
-            if rem >= 60:
-                rem_min = (rem + 59) // 60
-                return f"Odaklanma: {rem_min} dk kaldı"
-            return f"Odaklanma: {rem} sn kaldı"
+            if rem >= 3600:
+                hours, remainder = divmod(rem, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                time_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+            else:
+                minutes, seconds = divmod(rem, 60)
+                time_str = f"{minutes:02d}:{seconds:02d}"
+            return f"Odaklanma: {time_str} kaldı"
         else:
             minutes, seconds = divmod(rem, 60)
             time_str = f"{minutes:02d}:{seconds:02d}"

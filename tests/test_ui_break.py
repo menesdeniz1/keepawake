@@ -379,3 +379,38 @@ def test_tick_updates_nag_dialog(controller):
     controller.start_work_now()
     assert not controller.nag_dialog.isVisible()
 
+
+def test_break_toast_notification_properties(controller):
+    toast = controller.toast_notification
+    assert hasattr(toast, "title_label")
+    assert hasattr(toast, "msg_label")
+    assert hasattr(toast, "snooze_btn")
+    assert hasattr(toast, "dismiss_btn")
+
+    toast.show_toast("Test Title", "Test Message")
+    assert toast.isVisible()
+    assert toast.title_label.text() == "Test Title"
+    assert toast.msg_label.text() == "Test Message"
+
+    # Clicking dismiss hides toast
+    toast.dismiss_btn.click()
+    assert not toast.isVisible()
+
+    # Clicking snooze calls controller.snooze_break
+    toast.show_toast("Test Title", "Test Message")
+    assert toast.isVisible()
+    toast.snooze_btn.click()
+    assert not toast.isVisible()
+
+
+def test_notification_mode_shows_toast_on_alert(controller):
+    controller.config.break_alert_mode = "notification"
+    controller.toast_notification.hide()
+    assert not controller.toast_notification.isVisible()
+
+    controller.trigger_break_alert()
+    assert controller.toast_notification.isVisible()
+    assert "Mola İhlali" in controller.toast_notification.title_label.text()
+    controller.toast_notification.hide()
+
+
