@@ -268,7 +268,7 @@ class SettingsWindow(QMainWindow):
 
         dash_upnow_actions = QHBoxLayout()
         self.dash_start_break_btn = QPushButton("Molayı Şimdi Başlat")
-        self.dash_start_break_btn.clicked.connect(self.controller.start_break_now)
+        self.dash_start_break_btn.clicked.connect(self.controller.toggle_break_or_work)
         dash_upnow_actions.addWidget(self.dash_start_break_btn)
 
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
@@ -452,7 +452,7 @@ class SettingsWindow(QMainWindow):
         actions_box = QGroupBox("Hızlı Mola Aksiyonları")
         actions_layout = QHBoxLayout(actions_box)
         self.tab_start_break_btn = QPushButton("Molayı Şimdi Başlat")
-        self.tab_start_break_btn.clicked.connect(self.controller.start_break_now)
+        self.tab_start_break_btn.clicked.connect(self.controller.toggle_break_or_work)
         actions_layout.addWidget(self.tab_start_break_btn)
 
         self.tab_snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
@@ -641,6 +641,13 @@ class SettingsWindow(QMainWindow):
             if hasattr(self, "dash_upnow_status"):
                 self.dash_upnow_status.setText(up_text)
 
+        on_break = self.controller.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION)
+        break_btn_text = "Molayı Şimdi Bitir" if on_break else "Molayı Şimdi Başlat"
+        if hasattr(self, "dash_start_break_btn"):
+            self.dash_start_break_btn.setText(break_btn_text)
+        if hasattr(self, "tab_start_break_btn"):
+            self.tab_start_break_btn.setText(break_btn_text)
+
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
         event.ignore()
@@ -722,7 +729,7 @@ class KeepAwakeController(QObject):
         self.menu.addAction(self.break_action)
 
         self.start_break_action = QAction("Molayı Şimdi Başlat")
-        self.start_break_action.triggered.connect(self.start_break_now)
+        self.start_break_action.triggered.connect(self.toggle_break_or_work)
         self.menu.addAction(self.start_break_action)
 
         snooze_min = getattr(self.config, "break_snooze_minutes", 5)
@@ -802,6 +809,12 @@ class KeepAwakeController(QObject):
         self.store.save(self.config)
         self.window.load_from_config()
         self.apply_config()
+
+    def toggle_break_or_work(self):
+        if self.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+            self.start_work_now()
+        else:
+            self.start_break_now()
 
     def start_break_now(self):
         self.break_tracker.start_break_now()
@@ -945,6 +958,11 @@ class KeepAwakeController(QObject):
                 rem = self.break_tracker.remaining_seconds(now)
                 minutes, seconds = divmod(rem, 60)
                 self.nag_dialog.update_status(f"{minutes:02d}:{seconds:02d}")
+
+        on_break = self.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION)
+        break_btn_text = "Molayı Şimdi Bitir" if on_break else "Molayı Şimdi Başlat"
+        if hasattr(self, "start_break_action"):
+            self.start_break_action.setText(break_btn_text)
 
         status = self.status_text(now=now, idle=idle)
         self.status_action.setText(status)

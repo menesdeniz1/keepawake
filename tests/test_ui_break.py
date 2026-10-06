@@ -220,6 +220,33 @@ def test_dynamic_snooze_duration_and_button_texts(controller):
     assert controller.break_tracker.state == BreakState.WORKING
 
 
+def test_start_finish_break_button_toggle(controller):
+    win = controller.window
+    controller.config.break_reminder_enabled = True
+    controller.apply_config()
+    win.refresh_status()
+
+    # Initially working: text says "Molayı Şimdi Başlat"
+    assert win.dash_start_break_btn.text() == "Molayı Şimdi Başlat"
+    assert win.tab_start_break_btn.text() == "Molayı Şimdi Başlat"
+    assert controller.start_break_action.text() == "Molayı Şimdi Başlat"
+
+    # Click button -> starts break, text toggles to "Molayı Şimdi Bitir"
+    win.dash_start_break_btn.click()
+    assert controller.break_tracker.state == BreakState.ON_BREAK
+    assert win.dash_start_break_btn.text() == "Molayı Şimdi Bitir"
+    assert win.tab_start_break_btn.text() == "Molayı Şimdi Bitir"
+    assert controller.start_break_action.text() == "Molayı Şimdi Bitir"
+
+    # Click button again -> finishes break, transitions to WORKING, text toggles back
+    win.tab_start_break_btn.click()
+    assert controller.break_tracker.state == BreakState.WORKING
+    assert win.dash_start_break_btn.text() == "Molayı Şimdi Başlat"
+    assert win.tab_start_break_btn.text() == "Molayı Şimdi Başlat"
+    assert controller.start_break_action.text() == "Molayı Şimdi Başlat"
+
+
+
 def test_tray_menu_actions(controller):
     actions = {action.text(): action for action in controller.menu.actions()}
 
