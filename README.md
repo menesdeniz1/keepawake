@@ -96,10 +96,12 @@ Masa başında uzun süre kesintisiz çalışmayı önlemek ve düzenli mola al�
   - *5 Dk Ertele:* Molayı 5 dakika erteler ve çalışma moduna döner.
   - *Mola Takibini Duraklat:* Mola takipçisini geçici olarak duraklatır.
   - *Otomatik Kapanma:* Kullanıcı masadan kalkıp bilgisayarı bıraktığında (15 sn idle), uyarı penceresi otomatik kapanır ve mola sayacı arka planda işlemeye devam eder.
+- **Yüzen Canlı Sayaç Kapsülü (Floating Pill):** Mola başladığında ekranın sağ üst köşesinde zarif, yarı saydam ve kompakt bir sayaç kapsülü belirir (`☕ 09:45 | +5 Dk Uzat | 5 Dk Ertele | Acil Bitir | ✕`). Odak çalmaz (`WindowDoesNotAcceptFocus`), ekranın istenen yerine sürüklenebilir, kapatılabilir veya Ayarlar sekmesinden kapatılıp açılabilir. Windows, macOS ve Linux platformlarının tamamında yerel ve akıcı çalışır.
+- **Dinamik Erteleme ve Uzatma Desteği:** Ayarlar penceresinden hem erteleme hem de mola uzatma süreleri (1-60 dk) bağımsız olarak belirlenebilir; bildirimler, floating kapsül ve nagging diyaloğundaki butonlar seçilen süreleri dinamik olarak yansıtır.
 - **Varsayılan Olarak Kapalı (Opt-in):** Mevcut KeepAwake iş akışını bozmamak için özellik varsayılan olarak devre dışıdır.
 - **Tray Menüsünden ve Ayarlar Penceresinden Tam Yönetim:**
   - *Tray Menüsü:* Anlık mola durumu (ör. `UpNow: 42 dk kaldı`, `Mola: 08:30 kaldı`), "Molayı Başlat", "5 Dk Ertele" ve "Mola Takibini Duraklat / Devam Ettir" eylemleri.
-  - *Ayarlar Penceresi:* Mola Takipçisini Etkinleştir onay kutusu, Çalışma Süresi (dk), Mola Süresi (dk), Uyarı Modu seçimi.
+  - *Ayarlar Penceresi:* Mola Takipçisini Etkinleştir, Çalışma Süresi (dk), Mola Süresi (dk), Erteleme Süresi (dk), Uzatma Süresi (dk), Uyarı Modu ve Canlı Sayaç Kapsülü onay kutusu.
 
 ## Windows ile başlangıç
 

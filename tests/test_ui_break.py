@@ -548,3 +548,59 @@ def test_break_floating_pill_properties_and_actions(controller, monkeypatch):
         pill.hide()
 
 
+def test_controller_floating_pill_lifecycle(controller):
+    assert hasattr(controller, "floating_pill")
+    controller.config.break_reminder_enabled = True
+    controller.config.break_floating_timer_enabled = True
+    controller.config.break_duration_minutes = 10
+    controller.apply_config()
+
+    controller.floating_pill.hide()
+    assert not controller.floating_pill.isVisible()
+
+    # 1. Break starts -> floating pill is shown with countdown
+    controller.notify_break_started()
+    assert controller.floating_pill.isVisible()
+
+    # Tick during break updates pill countdown
+    controller.break_tracker.start_break_now()
+    controller.tick()
+    assert controller.floating_pill.isVisible()
+    assert "☕" in controller.floating_pill.timer_label.text()
+
+    # 2. Break finishes -> floating pill is hidden
+    controller.notify_break_finished()
+    assert not controller.floating_pill.isVisible()
+
+    # 3. If break_floating_timer_enabled is False -> pill is not shown
+    controller.config.break_floating_timer_enabled = False
+    controller.notify_break_started()
+    assert not controller.floating_pill.isVisible()
+
+    controller.floating_pill.hide()
+
+
+def test_settings_window_floating_pill_toggle(controller):
+    win = controller.window
+
+    assert hasattr(win, "break_floating_check")
+
+    # Test load from config
+    controller.config.break_floating_timer_enabled = True
+    win.load_from_config()
+    assert win.break_floating_check.isChecked() is True
+
+    controller.config.break_floating_timer_enabled = False
+    win.load_from_config()
+    assert win.break_floating_check.isChecked() is False
+
+    # Test save from window
+    win.break_floating_check.setChecked(True)
+    win.save_from_window()
+    assert controller.config.break_floating_timer_enabled is True
+
+    win.break_floating_check.setChecked(False)
+    win.save_from_window()
+    assert controller.config.break_floating_timer_enabled is False
+
+

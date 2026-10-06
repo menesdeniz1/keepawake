@@ -457,6 +457,7 @@ class BreakFloatingPill(QWidget):
         self.controller = controller
         self.drag_position = None
         self._custom_position = False
+        self._manually_closed = False
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -513,7 +514,7 @@ class BreakFloatingPill(QWidget):
         self.close_btn = QPushButton("✕", self.card)
         self.close_btn.setObjectName("pillClose")
         self.close_btn.setFixedSize(18, 18)
-        self.close_btn.clicked.connect(self.hide)
+        self.close_btn.clicked.connect(self.on_close)
         pill_layout.addWidget(self.close_btn)
 
         outer_layout.addWidget(self.card)
@@ -583,6 +584,10 @@ class BreakFloatingPill(QWidget):
             self.controller.start_work_now()
         elif hasattr(self.controller, "break_tracker"):
             self.controller.break_tracker.reset()
+        self.hide()
+
+    def on_close(self):
+        self._manually_closed = True
         self.hide()
 
     def reposition(self):
@@ -855,6 +860,9 @@ class SettingsWindow(QMainWindow):
         self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
         upnow_form.addRow("Uyarı modu:", self.break_alert_combo)
 
+        self.break_floating_check = QCheckBox("Mola sırasında ekranda yüzen canlı sayaç kapsülü göster")
+        upnow_form.addRow(self.break_floating_check)
+
         upnow_layout.addWidget(upnow_box)
 
         actions_box = QGroupBox("Hızlı Mola Aksiyonları")
@@ -920,6 +928,7 @@ class SettingsWindow(QMainWindow):
         self.break_duration_spin.setValue(config.break_duration_minutes)
         self.break_snooze_spin.setValue(config.break_snooze_minutes)
         self.break_extend_spin.setValue(getattr(config, "break_extend_minutes", 5))
+        self.break_floating_check.setChecked(getattr(config, "break_floating_timer_enabled", True))
         combo_idx = 1 if config.break_alert_mode == "nagging" else 0
         self.break_alert_combo.setCurrentIndex(combo_idx)
 
@@ -932,10 +941,14 @@ class SettingsWindow(QMainWindow):
             self.dash_snooze_btn.setText(text)
         if hasattr(self, "tab_snooze_btn"):
             self.tab_snooze_btn.setText(text)
+        if getattr(self.controller, "floating_pill", None) is not None:
+            self.controller.floating_pill.snooze_btn.setText(f"{value} Dk Ertele")
 
     def _on_extend_spin_changed(self, value: int):
         if getattr(self.controller, "nag_dialog", None) is not None:
             self.controller.nag_dialog.extend_btn.setText(f"{value} Dakika Uzat")
+        if getattr(self.controller, "floating_pill", None) is not None:
+            self.controller.floating_pill.extend_btn.setText(f"+{value} Dk Uzat")
 
     def update_snooze_buttons(self):
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
@@ -948,6 +961,10 @@ class SettingsWindow(QMainWindow):
             self.controller.nag_dialog.snooze_btn.setText(text)
             extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
             self.controller.nag_dialog.extend_btn.setText(f"{extend_min} Dakika Uzat")
+        if getattr(self.controller, "floating_pill", None) is not None:
+            self.controller.floating_pill.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            self.controller.floating_pill.extend_btn.setText(f"+{extend_min} Dk Uzat")
         if getattr(self.controller, "snooze_break_action", None) is not None:
             self.controller.snooze_break_action.setText(text)
 
@@ -958,6 +975,7 @@ class SettingsWindow(QMainWindow):
         config.break_duration_minutes = self.break_duration_spin.value()
         config.break_snooze_minutes = self.break_snooze_spin.value()
         config.break_extend_minutes = self.break_extend_spin.value()
+        config.break_floating_timer_enabled = self.break_floating_check.isChecked()
         selected_data = self.break_alert_combo.currentData()
         if selected_data:
             config.break_alert_mode = selected_data
@@ -1113,6 +1131,7 @@ class KeepAwakeController(QObject):
         self.window = SettingsWindow(self)
         self.nag_dialog = BreakNagDialog(self)
         self.toast_notification = BreakToastNotification(self)
+        self.floating_pill = BreakFloatingPill(self)
 
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(
@@ -1290,6 +1309,11 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
+        if (
+            getattr(self, "floating_pill", None) is not None
+            and self.floating_pill.isVisible()
+        ):
+            self.floating_pill.hide()
         title = "UpNow - Mola Ertelendi"
         msg = f"Mola {minutes} dakika ertelendi, çalışmaya devam ediliyor."
         self.show_system_notification(
@@ -1309,6 +1333,18 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
+        if getattr(self, "floating_pill", None) is not None:
+            self.floating_pill._manually_closed = False
+            floating_enabled = (
+                getattr(self.config, "break_floating_timer_enabled", True)
+                and self.config.break_reminder_enabled
+            )
+            if floating_enabled:
+                rem = self.break_tracker.remaining_seconds()
+                minutes_val, seconds_val = divmod(rem, 60)
+                self.floating_pill.update_status(f"{minutes_val:02d}:{seconds_val:02d}")
+                if not self.floating_pill.isVisible():
+                    self.floating_pill.show()
         title = "UpNow - Mola Uzatıldı"
         msg = f"Mola {minutes} dakika uzatıldı, dinlenmeye devam edebilirsiniz."
         self.show_system_notification(
@@ -1328,6 +1364,11 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
+        if (
+            getattr(self, "floating_pill", None) is not None
+            and self.floating_pill.isVisible()
+        ):
+            self.floating_pill.hide()
         title = "UpNow - Mola Ertelendi"
         msg = f"Mola {minutes} dakika ertelendi."
         self.show_system_notification(
@@ -1350,6 +1391,11 @@ class KeepAwakeController(QObject):
             and self.toast_notification.isVisible()
         ):
             self.toast_notification.hide()
+        if (
+            getattr(self, "floating_pill", None) is not None
+            and self.floating_pill.isVisible()
+        ):
+            self.floating_pill.hide()
         self.notify_break_finished()
         self.tick()
 
@@ -1481,6 +1527,23 @@ class KeepAwakeController(QObject):
                 self.nag_dialog.update_status(f"{minutes:02d}:{seconds:02d}")
 
         on_break = self.break_tracker.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION)
+        floating_enabled = (
+            getattr(self.config, "break_floating_timer_enabled", True)
+            and self.config.break_reminder_enabled
+        )
+
+        if getattr(self, "floating_pill", None) is not None:
+            if on_break and floating_enabled:
+                rem = self.break_tracker.remaining_seconds(now)
+                minutes, seconds = divmod(rem, 60)
+                self.floating_pill.update_status(f"{minutes:02d}:{seconds:02d}")
+                if not getattr(self.floating_pill, "_manually_closed", False):
+                    if not self.floating_pill.isVisible():
+                        self.floating_pill.show()
+            else:
+                if self.floating_pill.isVisible():
+                    self.floating_pill.hide()
+
         break_btn_text = "Molayı Şimdi Bitir" if on_break else "Molayı Şimdi Başlat"
         if hasattr(self, "start_break_action"):
             self.start_break_action.setText(break_btn_text)
@@ -1544,6 +1607,19 @@ class KeepAwakeController(QObject):
         title = "UpNow - Mola Vakti"
         msg = f"Mola vakti! Lütfen masadan kalkın ve dinlenin ({duration} dk)."
 
+        if getattr(self, "floating_pill", None) is not None:
+            self.floating_pill._manually_closed = False
+            floating_enabled = (
+                getattr(self.config, "break_floating_timer_enabled", True)
+                and self.config.break_reminder_enabled
+            )
+            if floating_enabled:
+                rem = self.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                self.floating_pill.update_status(f"{minutes:02d}:{seconds:02d}")
+                if not self.floating_pill.isVisible():
+                    self.floating_pill.show()
+
         if self.config.break_alert_mode == "nagging":
             if getattr(self, "nag_dialog", None) is not None:
                 rem = self.break_tracker.remaining_seconds()
@@ -1574,6 +1650,8 @@ class KeepAwakeController(QObject):
             self.nag_dialog.hide()
         if getattr(self, "toast_notification", None) is not None and self.toast_notification.isVisible():
             self.toast_notification.hide()
+        if getattr(self, "floating_pill", None) is not None and self.floating_pill.isVisible():
+            self.floating_pill.hide()
 
         title = "UpNow - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
