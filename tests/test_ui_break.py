@@ -417,11 +417,13 @@ def test_toast_snooze_actions_extend_work_and_break(controller):
     controller.config.break_snooze_minutes = 5
     controller.apply_config()
 
-    # 1. Molaya girerken (Break started) -> Ertele deyince çalışma uzasın
+    # 1. Molaya girerken (Break started) -> 'Molayı Ertele' ve 'Tamam' (2 şık)
     controller.notify_break_started()
     assert controller.toast_notification.isVisible()
     assert controller.toast_notification.snooze_btn.isVisible()
-    assert "5 Dk Ertele" in controller.toast_notification.snooze_btn.text()
+    assert "Molayı Ertele" in controller.toast_notification.snooze_btn.text()
+    assert controller.toast_notification.dismiss_btn.isVisible()
+    assert controller.toast_notification.dismiss_btn.text() == "Tamam"
 
     controller.toast_notification.snooze_btn.click()
     # Working state extended, nudge allowed
@@ -433,15 +435,23 @@ def test_toast_snooze_actions_extend_work_and_break(controller):
 
     controller.toast_notification.hide()
 
-    # 2. Mola bitince (Break finished) -> Sadece Tamam çıksın, ertele olmasın
+    # 2. Mola bitince (Break finished) -> 'Molayı Uzat' ve 'Tamam' (2 şık)
     controller.notify_break_finished()
     assert controller.toast_notification.isVisible()
     assert "Mola Tamamlandı" in controller.toast_notification.title_label.text()
-    assert not controller.toast_notification.snooze_btn.isVisible()
+    assert controller.toast_notification.snooze_btn.isVisible()
+    assert "Molayı Uzat" in controller.toast_notification.snooze_btn.text()
     assert controller.toast_notification.dismiss_btn.isVisible()
     assert controller.toast_notification.dismiss_btn.text() == "Tamam"
 
-    controller.toast_notification.dismiss_btn.click()
-    assert not controller.toast_notification.isVisible()
+    controller.toast_notification.snooze_btn.click()
+    # Break state restored and extended, nudge locked
+    assert controller.break_tracker.state == BreakState.ON_BREAK
+    assert controller.break_tracker.is_nudge_allowed() is False
+    # Toast switched to feedback (without snooze button)
+    assert "Mola Uzatıldı" in controller.toast_notification.title_label.text()
+    assert not controller.toast_notification.snooze_btn.isVisible()
+
+    controller.toast_notification.hide()
 
 

@@ -288,7 +288,7 @@ class BreakToastNotification(QWidget):
         btn_row.addStretch()
 
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        self.snooze_btn = QPushButton(f"{snooze_min} Dk Ertele", self)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dk Molayı Ertele", self)
         self.snooze_btn.clicked.connect(self.on_snooze)
         btn_row.addWidget(self.snooze_btn)
 
@@ -350,7 +350,7 @@ class BreakToastNotification(QWidget):
         screen = QApplication.primaryScreen()
         if screen is not None:
             geom = screen.availableGeometry()
-            width = 340
+            width = 370
             height = self.sizeHint().height() or 110
             x = geom.right() - width - 20
             y = geom.top() + 40
@@ -371,7 +371,7 @@ class BreakToastNotification(QWidget):
         if snooze_text:
             self.snooze_btn.setText(snooze_text)
         else:
-            self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+            self.snooze_btn.setText(f"{snooze_min} Dk Molayı Ertele")
         self._on_snooze_callback = on_snooze
         if show_snooze is None:
             show_snooze = True
@@ -1281,7 +1281,7 @@ class KeepAwakeController(QObject):
                 title,
                 msg,
                 QSystemTrayIcon.MessageIcon.Information,
-                snooze_text=f"{snooze_min} Dk Ertele",
+                snooze_text=f"{snooze_min} Dk Molayı Ertele",
                 on_snooze=lambda m: self.extend_work(m),
                 show_snooze=True,
             )
@@ -1294,11 +1294,14 @@ class KeepAwakeController(QObject):
 
         title = "UpNow - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
+        snooze_min = getattr(self.config, "break_snooze_minutes", 5)
         self.show_system_notification(
             title,
             msg,
             QSystemTrayIcon.MessageIcon.Information,
-            show_snooze=False,
+            snooze_text=f"{snooze_min} Dk Molayı Uzat",
+            on_snooze=lambda m: self.extend_break(m),
+            show_snooze=True,
         )
 
     def trigger_break_alert(self):
