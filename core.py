@@ -42,6 +42,7 @@ class AppConfig:
     break_reminder_enabled: bool = False
     work_duration_minutes: int = 50
     break_duration_minutes: int = 10
+    break_snooze_minutes: int = 5
     break_alert_mode: str = "notification"  # "notification" veya "nagging"
     break_violation_threshold_seconds: int = 15
     break_alert_cooldown_seconds: int = 60
@@ -92,7 +93,9 @@ class BreakTracker:
         current = now or datetime.now()
         self._start_break(current)
 
-    def snooze(self, minutes: int = 5, now: datetime | None = None) -> None:
+    def snooze(self, minutes: int | None = None, now: datetime | None = None) -> None:
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
         current = now or datetime.now()
         if self.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
             self.state = BreakState.WORKING

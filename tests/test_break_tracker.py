@@ -10,6 +10,7 @@ def test_app_config_break_defaults():
     assert config.break_reminder_enabled is False
     assert config.work_duration_minutes == 50
     assert config.break_duration_minutes == 10
+    assert config.break_snooze_minutes == 5
     assert config.break_alert_mode == "notification"
     assert config.break_violation_threshold_seconds == 15
     assert config.break_alert_cooldown_seconds == 60
@@ -100,23 +101,27 @@ def test_break_tracker_start_break_now():
 
 
 def test_break_tracker_snooze():
-    config = AppConfig(break_reminder_enabled=True, work_duration_minutes=50, break_duration_minutes=10)
+    config = AppConfig(break_reminder_enabled=True, work_duration_minutes=50, break_duration_minutes=10, break_snooze_minutes=12)
     start_time = datetime(2026, 10, 6, 10, 0, 0)
     tracker = BreakTracker(config, now=start_time)
 
-    # Snooze during working extends target time by 5 minutes
-    tracker.snooze(minutes=5, now=start_time)
-    assert tracker.remaining_seconds(start_time) == 55 * 60
+    # Snooze without explicit minutes uses config.break_snooze_minutes (12m)
+    tracker.snooze(now=start_time)
+    assert tracker.remaining_seconds(start_time) == 62 * 60
 
-    # Start break then snooze -> transitions to working for 5 minutes
-    break_time = start_time + timedelta(minutes=55, seconds=1)
+    # Snooze during working extends target time by specified minutes
+    tracker.snooze(minutes=5, now=start_time)
+    assert tracker.remaining_seconds(start_time) == 67 * 60
+
+    # Start break then snooze -> transitions to working for break_snooze_minutes (12m)
+    break_time = start_time + timedelta(minutes=67, seconds=1)
     tracker.tick(now=break_time, idle_seconds=30.0)
     assert tracker.state == BreakState.ON_BREAK
 
-    tracker.snooze(minutes=5, now=break_time)
+    tracker.snooze(now=break_time)
     assert tracker.state == BreakState.WORKING
     assert tracker.is_nudge_allowed() is True
-    assert tracker.remaining_seconds(break_time) == 5 * 60
+    assert tracker.remaining_seconds(break_time) == 12 * 60
 
 
 def test_break_tracker_toggle_pause():

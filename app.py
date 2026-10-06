@@ -157,7 +157,8 @@ class BreakNagDialog(QDialog):
         layout.addWidget(self.countdown_label)
 
         btn_row = QHBoxLayout()
-        self.snooze_btn = QPushButton("5 Dakika Ertele")
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
         self.snooze_btn.clicked.connect(self.on_snooze)
         btn_row.addWidget(self.snooze_btn)
 
@@ -204,12 +205,15 @@ class BreakNagDialog(QDialog):
 
     def update_status(self, remaining_text: str):
         self.countdown_label.setText(remaining_text)
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.snooze_btn.setText(f"{snooze_min} Dakika Ertele")
 
     def on_snooze(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
         if hasattr(self.controller, "snooze_break"):
-            self.controller.snooze_break(5)
+            self.controller.snooze_break(snooze_min)
         elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.snooze(5)
+            self.controller.break_tracker.snooze(snooze_min)
         self.hide()
 
     def on_finish(self):
@@ -267,8 +271,9 @@ class SettingsWindow(QMainWindow):
         self.dash_start_break_btn.clicked.connect(self.controller.start_break_now)
         dash_upnow_actions.addWidget(self.dash_start_break_btn)
 
-        self.dash_snooze_btn = QPushButton("5 Dakika Ertele")
-        self.dash_snooze_btn.clicked.connect(lambda: self.controller.snooze_break(5))
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        self.dash_snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
+        self.dash_snooze_btn.clicked.connect(lambda: self.controller.snooze_break())
         dash_upnow_actions.addWidget(self.dash_snooze_btn)
 
         dash_upnow_actions.addStretch()
@@ -431,6 +436,12 @@ class SettingsWindow(QMainWindow):
         self.break_duration_spin.setSuffix(" dk")
         upnow_form.addRow("Mola süresi:", self.break_duration_spin)
 
+        self.break_snooze_spin = QSpinBox()
+        self.break_snooze_spin.setRange(1, 60)
+        self.break_snooze_spin.setSuffix(" dk")
+        self.break_snooze_spin.valueChanged.connect(self._on_snooze_spin_changed)
+        upnow_form.addRow("Erteleme süresi:", self.break_snooze_spin)
+
         self.break_alert_combo = QComboBox()
         self.break_alert_combo.addItem("Nazik Bildirim (Sistem)", "notification")
         self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
@@ -444,8 +455,8 @@ class SettingsWindow(QMainWindow):
         self.tab_start_break_btn.clicked.connect(self.controller.start_break_now)
         actions_layout.addWidget(self.tab_start_break_btn)
 
-        self.tab_snooze_btn = QPushButton("5 Dakika Ertele")
-        self.tab_snooze_btn.clicked.connect(lambda: self.controller.snooze_break(5))
+        self.tab_snooze_btn = QPushButton(f"{snooze_min} Dakika Ertele")
+        self.tab_snooze_btn.clicked.connect(lambda: self.controller.snooze_break())
         actions_layout.addWidget(self.tab_snooze_btn)
 
         upnow_layout.addWidget(actions_box)
@@ -499,16 +510,38 @@ class SettingsWindow(QMainWindow):
         self.break_enabled_check.setChecked(config.break_reminder_enabled)
         self.work_duration_spin.setValue(config.work_duration_minutes)
         self.break_duration_spin.setValue(config.break_duration_minutes)
+        self.break_snooze_spin.setValue(config.break_snooze_minutes)
         combo_idx = 1 if config.break_alert_mode == "nagging" else 0
         self.break_alert_combo.setCurrentIndex(combo_idx)
 
+        self.update_snooze_buttons()
         self.refresh_status()
+
+    def _on_snooze_spin_changed(self, value: int):
+        text = f"{value} Dakika Ertele"
+        if hasattr(self, "dash_snooze_btn"):
+            self.dash_snooze_btn.setText(text)
+        if hasattr(self, "tab_snooze_btn"):
+            self.tab_snooze_btn.setText(text)
+
+    def update_snooze_buttons(self):
+        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+        text = f"{snooze_min} Dakika Ertele"
+        if hasattr(self, "dash_snooze_btn"):
+            self.dash_snooze_btn.setText(text)
+        if hasattr(self, "tab_snooze_btn"):
+            self.tab_snooze_btn.setText(text)
+        if getattr(self.controller, "nag_dialog", None) is not None:
+            self.controller.nag_dialog.snooze_btn.setText(text)
+        if getattr(self.controller, "snooze_break_action", None) is not None:
+            self.controller.snooze_break_action.setText(text)
 
     def save_from_window(self):
         config = self.controller.config
         config.break_reminder_enabled = self.break_enabled_check.isChecked()
         config.work_duration_minutes = self.work_duration_spin.value()
         config.break_duration_minutes = self.break_duration_spin.value()
+        config.break_snooze_minutes = self.break_snooze_spin.value()
         selected_data = self.break_alert_combo.currentData()
         if selected_data:
             config.break_alert_mode = selected_data
@@ -575,6 +608,7 @@ class SettingsWindow(QMainWindow):
 
         self.controller.store.save(config)
         self.controller.apply_config()
+        self.update_snooze_buttons()
         self.refresh_status()
 
         QMessageBox.information(
@@ -691,8 +725,9 @@ class KeepAwakeController(QObject):
         self.start_break_action.triggered.connect(self.start_break_now)
         self.menu.addAction(self.start_break_action)
 
-        self.snooze_break_action = QAction("5 Dakika Ertele")
-        self.snooze_break_action.triggered.connect(lambda: self.snooze_break(5))
+        snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+        self.snooze_break_action = QAction(f"{snooze_min} Dakika Ertele")
+        self.snooze_break_action.triggered.connect(lambda: self.snooze_break())
         self.menu.addAction(self.snooze_break_action)
 
         self.toggle_break_pause_action = QAction("Mola Takibini Duraklat / Devam Ettir")
@@ -747,6 +782,12 @@ class KeepAwakeController(QObject):
             self.break_action.setChecked(self.config.break_reminder_enabled)
             self.break_action.blockSignals(False)
 
+        if hasattr(self, "snooze_break_action"):
+            self.snooze_break_action.setText(f"{self.config.break_snooze_minutes} Dakika Ertele")
+
+        if hasattr(self, "window") and self.window is not None:
+            self.window.update_snooze_buttons()
+
         self.break_tracker.update_config(self.config)
         self.tick()
 
@@ -766,7 +807,9 @@ class KeepAwakeController(QObject):
         self.break_tracker.start_break_now()
         self.tick()
 
-    def snooze_break(self, minutes: int = 5):
+    def snooze_break(self, minutes: int | None = None):
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
         self.break_tracker.snooze(minutes)
         if (
             getattr(self, "nag_dialog", None) is not None
@@ -953,9 +996,7 @@ class KeepAwakeController(QObject):
         parts = ["🟢 Program aktif"]
 
         if self.config.prevent_sleep or self.config.keep_display_on:
-            if self.execution_state_active:
-                parts.append("keep-awake açık")
-            else:
+            if not self.execution_state_active:
                 parts.append("keep-awake uygulanamadı")
 
         if self.config.simulate_mouse_input:

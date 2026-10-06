@@ -96,6 +96,7 @@ def test_settings_window_upnow_fields(controller):
     assert hasattr(win, "break_enabled_check")
     assert hasattr(win, "work_duration_spin")
     assert hasattr(win, "break_duration_spin")
+    assert hasattr(win, "break_snooze_spin")
     assert hasattr(win, "break_alert_combo")
 
     assert hasattr(win, "tabs")
@@ -151,6 +152,7 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     controller.config.break_reminder_enabled = True
     controller.config.work_duration_minutes = 45
     controller.config.break_duration_minutes = 15
+    controller.config.break_snooze_minutes = 10
     controller.config.break_alert_mode = "nagging"
 
     win.load_from_config()
@@ -158,12 +160,14 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     assert win.break_enabled_check.isChecked() is True
     assert win.work_duration_spin.value() == 45
     assert win.break_duration_spin.value() == 15
+    assert win.break_snooze_spin.value() == 10
     assert win.break_alert_combo.currentIndex() == 1
 
     # Test save_from_window
     win.break_enabled_check.setChecked(False)
     win.work_duration_spin.setValue(25)
     win.break_duration_spin.setValue(5)
+    win.break_snooze_spin.setValue(8)
     win.break_alert_combo.setCurrentIndex(0)
 
     assert hasattr(win, "save_from_window"), "SettingsWindow should implement save_from_window"
@@ -172,6 +176,7 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     assert controller.config.break_reminder_enabled is False
     assert controller.config.work_duration_minutes == 25
     assert controller.config.break_duration_minutes == 5
+    assert controller.config.break_snooze_minutes == 8
     assert controller.config.break_alert_mode == "notification"
 
     # Test saving via full save() method
@@ -181,11 +186,38 @@ def test_settings_window_load_and_save(controller, monkeypatch):
 
     win.break_enabled_check.setChecked(True)
     win.work_duration_spin.setValue(50)
+    win.break_snooze_spin.setValue(12)
     win.save()
 
     assert controller.config.break_reminder_enabled is True
     assert controller.config.work_duration_minutes == 50
+    assert controller.config.break_snooze_minutes == 12
     save_store_spy.assert_called_once()
+
+
+def test_dynamic_snooze_duration_and_button_texts(controller):
+    win = controller.window
+    controller.config.break_reminder_enabled = True
+    controller.config.break_snooze_minutes = 15
+    controller.apply_config()
+    win.load_from_config()
+
+    assert win.break_snooze_spin.value() == 15
+    assert win.dash_snooze_btn.text() == "15 Dakika Ertele"
+    assert win.tab_snooze_btn.text() == "15 Dakika Ertele"
+    assert controller.snooze_break_action.text() == "15 Dakika Ertele"
+    assert controller.nag_dialog.snooze_btn.text() == "15 Dakika Ertele"
+
+    # User changes spinbox value live -> button labels update
+    win.break_snooze_spin.setValue(8)
+    assert win.dash_snooze_btn.text() == "8 Dakika Ertele"
+    assert win.tab_snooze_btn.text() == "8 Dakika Ertele"
+
+    # Clicking snooze button triggers snooze
+    controller.break_tracker.start_break_now()
+    assert controller.break_tracker.state == BreakState.ON_BREAK
+    win.dash_snooze_btn.click()
+    assert controller.break_tracker.state == BreakState.WORKING
 
 
 def test_tray_menu_actions(controller):

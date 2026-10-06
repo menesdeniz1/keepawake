@@ -188,3 +188,21 @@ def test_controller_keepawake_status_text_never_includes_break_info(controller):
     global_status = controller.status_text()
     assert "Odaklanma" in global_status
 
+
+def test_controller_keepawake_status_text_no_redundant_keepawake_ack(controller):
+    controller.config.enabled = True
+    controller.config.prevent_sleep = True
+    controller.execution_state_active = True
+    controller.apply_config()
+
+    ka_status = controller.keepawake_status_text()
+    assert "🟢 Program aktif" in ka_status
+    # Redundant "keep-awake açık" must NOT be present
+    assert "keep-awake açık" not in ka_status
+
+    # When execution state fails, it should report it
+    controller.execution_state_active = False
+    ka_status_failed = controller.keepawake_status_text()
+    assert "keep-awake uygulanamadı" in ka_status_failed
+
+
