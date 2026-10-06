@@ -129,7 +129,7 @@ class BreakNagDialog(QDialog):
         self.controller = controller
 
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-        self.setWindowTitle(f"{APP_NAME} - Mola Vakti")
+        self.setWindowTitle("UpNow - Mola Vakti")
         self.setMinimumWidth(380)
 
         layout = QVBoxLayout(self)
@@ -231,7 +231,7 @@ class BreakNagDialog(QDialog):
         event.ignore()
 
 
-class BreakToastNotification(QDialog):
+class BreakToastNotification(QWidget):
     """Nazik Mod: Ekranın sağ üst köşesinde zarifçe beliren, odağı çalmayan kayan bildirim kartı."""
 
     def __init__(self, controller, parent=None):
@@ -241,7 +241,7 @@ class BreakToastNotification(QDialog):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            | Qt.WindowType.ToolTip
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -362,7 +362,6 @@ class BreakToastNotification(QDialog):
         self.adjustSize()
         self.reposition()
         self.show()
-        self.raise_()
         self.auto_hide_timer.start(timeout_seconds * 1000)
 
     def closeEvent(self, event):
@@ -410,7 +409,7 @@ class SettingsWindow(QMainWindow):
         dashboard_layout.addWidget(self.dash_ka_box)
 
         # UpNow Özet Kartı
-        self.dash_upnow_box = QGroupBox("UpNow - Mola & Ayakta Kalma Takipçisi")
+        self.dash_upnow_box = QGroupBox("UpNow - Mola Takipçisi")
         dash_upnow_layout = QVBoxLayout(self.dash_upnow_box)
         self.dash_upnow_status = QLabel()
         self.dash_upnow_status.setWordWrap(True)
@@ -574,7 +573,7 @@ class SettingsWindow(QMainWindow):
         self.upnow_status_label.setWordWrap(True)
         upnow_layout.addWidget(self.upnow_status_label)
 
-        upnow_box = QGroupBox("Mola & Ayakta Kalma Ayarları")
+        upnow_box = QGroupBox("Mola Takipçisi Ayarları")
         upnow_form = QFormLayout(upnow_box)
 
         self.break_enabled_check = QCheckBox("UpNow mola takipçisini etkinleştir")
@@ -1009,7 +1008,7 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
-        title = f"{APP_NAME} - Mola Ertelendi"
+        title = "UpNow - Mola Ertelendi"
         msg = f"Mola {minutes} dakika ertelendi."
         self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
         self.tick()
@@ -1196,7 +1195,7 @@ class KeepAwakeController(QObject):
 
     def notify_break_started(self):
         duration = self.config.break_duration_minutes
-        title = f"{APP_NAME} - Mola Vakti"
+        title = "UpNow - Mola Vakti"
         msg = f"Mola vakti! Lütfen masadan kalkın ve dinlenin ({duration} dk)."
 
         if self.config.break_alert_mode == "nagging":
@@ -1216,7 +1215,7 @@ class KeepAwakeController(QObject):
         if getattr(self, "toast_notification", None) is not None and self.toast_notification.isVisible():
             self.toast_notification.hide()
 
-        title = f"{APP_NAME} - Mola Tamamlandı"
+        title = "UpNow - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
         self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
 

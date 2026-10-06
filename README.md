@@ -79,9 +79,9 @@ Ayar dosyası:
 - Linux: `$XDG_CONFIG_HOME/KeepAwake/config.json` (tanımlı değilse `~/.config/KeepAwake/config.json`)
 - macOS: `~/.config/KeepAwake/config.json`
 
-## UpNow - Mola & Ayakta Kalma Takipçisi
+## UpNow - Mola Takipçisi
 
-Masa başında uzun süre hareketsiz çalışmayı önlemek ve düzenli ayakta durma/mola alışkanlığı kazandırmak için entegre mola takip modülü.
+Masa başında uzun süre kesintisiz çalışmayı önlemek ve düzenli mola alışkanlığı kazandırmak için entegre mola takip modülü.
 
 ### Temel Özellikler
 
@@ -265,7 +265,7 @@ Eski v1.1 config dosyaları geriye dönük uyumludur; yeni cooldown alanları yo
 
 ## v1.4 - UpNow Mola Takipçisi ve macOS Desteği
 
-- **UpNow Mola & Ayakta Kalma Takipçisi:** Masa başı hareketsizliği önlemek için 50 dk çalışma / 10 dk mola döngüsü, mola sırasında fare nudge engelleme, hareket algılandığında zorlayıcı pencere veya bildirim uyarıları ve tray menüsü/ayarlar entegrasyonu eklendi.
+- **UpNow Mola Takipçisi:** Masa başı kesintisiz çalışmayı önlemek için 50 dk çalışma / 10 dk mola döngüsü, mola sırasında fare nudge engelleme, hareket algılandığında zorlayıcı pencere veya bildirim uyarıları ve tray menüsü/ayarlar entegrasyonu eklendi.
 - **macOS Desteği:** `ApplicationServices` / Quartz (CoreGraphics) ile native idle algılama ve fare nudge, `caffeinate` ile uyku yönetimi ve LaunchAgents plist ile otomatik başlatma desteği sağlandı (`backend_macos.py`).
 - **Geriye Dönük Uyumluluk:** Eski config dosyaları UpNow kapalı olacak şekilde sorunsuz yüklenir.
 

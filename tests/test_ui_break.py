@@ -55,7 +55,7 @@ def test_break_nag_dialog_properties(controller):
         assert isinstance(dialog, QDialog)
         flags = dialog.windowFlags()
         assert bool(flags & Qt.WindowType.WindowStaysOnTopHint)
-        assert f"{APP_NAME} - Mola Vakti" in dialog.windowTitle()
+        assert "UpNow - Mola Vakti" in dialog.windowTitle()
         assert "Lütfen Masadan Uzaklaşın!" in dialog.headline_label.text()
         assert hasattr(dialog, "countdown_label")
 
@@ -112,6 +112,7 @@ def test_settings_window_upnow_fields(controller):
     assert hasattr(win, "dash_snooze_btn")
     assert hasattr(win, "dash_ka_toggle_btn")
     assert hasattr(win, "dash_upnow_toggle_btn")
+    assert win.dash_upnow_box.title() == "UpNow - Mola Takipçisi"
     assert not hasattr(win, "dash_to_ka_btn")
     assert not hasattr(win, "dash_to_upnow_btn")
     assert hasattr(win, "tab_start_break_btn")
