@@ -165,6 +165,11 @@ class BreakNagDialog(QDialog):
         self.snooze_btn.clicked.connect(self.on_snooze)
         btn_row.addWidget(self.snooze_btn)
 
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn = QPushButton(f"{extend_min} Dakika Uzat")
+        self.extend_btn.clicked.connect(self.on_extend)
+        btn_row.addWidget(self.extend_btn)
+
         self.finish_btn = QPushButton("Acil Durum: Molayı Bitir")
         self.finish_btn.clicked.connect(self.on_finish)
         btn_row.addWidget(self.finish_btn)
@@ -210,6 +215,8 @@ class BreakNagDialog(QDialog):
         self.countdown_label.setText(remaining_text)
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
         self.snooze_btn.setText(f"{snooze_min} Dakika Ertele")
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn.setText(f"{extend_min} Dakika Uzat")
 
     def on_snooze(self):
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
@@ -217,6 +224,14 @@ class BreakNagDialog(QDialog):
             self.controller.snooze_break(snooze_min)
         elif hasattr(self.controller, "break_tracker"):
             self.controller.break_tracker.snooze(snooze_min)
+        self.hide()
+
+    def on_extend(self):
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        if hasattr(self.controller, "extend_break"):
+            self.controller.extend_break(extend_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_break(extend_min)
         self.hide()
 
     def on_finish(self):
@@ -283,14 +298,24 @@ class BreakToastNotification(QWidget):
         self.msg_label.setWordWrap(True)
         card_layout.addWidget(self.msg_label)
 
-        # Butonlar satırı: [ X Dk Ertele ] [ Tamam ]
+        # Butonlar satırı: [ Ertele ] [ Uzat ] [ Acil Bitir ] / [ Uzat ] [ Tamam ]
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
         btn_row.addStretch()
 
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
         self.snooze_btn = QPushButton(f"{snooze_min} Dk Molayı Ertele", self)
         self.snooze_btn.clicked.connect(self.on_snooze)
         btn_row.addWidget(self.snooze_btn)
+
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        self.extend_btn = QPushButton(f"{extend_min} Dk Molayı Uzat", self)
+        self.extend_btn.clicked.connect(self.on_extend)
+        btn_row.addWidget(self.extend_btn)
+
+        self.emergency_btn = QPushButton("Acil Bitir", self)
+        self.emergency_btn.clicked.connect(self.on_emergency)
+        btn_row.addWidget(self.emergency_btn)
 
         self.dismiss_btn = QPushButton("Tamam", self)
         self.dismiss_btn.clicked.connect(self.hide)
@@ -340,17 +365,34 @@ class BreakToastNotification(QWidget):
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
         if callable(getattr(self, "_on_snooze_callback", None)):
             self._on_snooze_callback(snooze_min)
+        elif hasattr(self.controller, "extend_work"):
+            self.controller.extend_work(snooze_min)
         elif hasattr(self.controller, "snooze_break"):
             self.controller.snooze_break(snooze_min)
         elif hasattr(self.controller, "break_tracker"):
             self.controller.break_tracker.snooze(snooze_min)
         self.hide()
 
+    def on_extend(self):
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+        if callable(getattr(self, "_on_extend_callback", None)):
+            self._on_extend_callback(extend_min)
+        elif hasattr(self.controller, "extend_break"):
+            self.controller.extend_break(extend_min)
+        elif hasattr(self.controller, "break_tracker"):
+            self.controller.break_tracker.extend_break(extend_min)
+        self.hide()
+
+    def on_emergency(self):
+        if hasattr(self.controller, "start_work_now"):
+            self.controller.start_work_now()
+        self.hide()
+
     def reposition(self):
         screen = QApplication.primaryScreen()
         if screen is not None:
             geom = screen.availableGeometry()
-            width = 370
+            width = 440 if (self.extend_btn.isVisible() and self.emergency_btn.isVisible() and self.snooze_btn.isVisible()) else 380
             height = self.sizeHint().height() or 110
             x = geom.right() - width - 20
             y = geom.top() + 40
@@ -364,18 +406,39 @@ class BreakToastNotification(QWidget):
         snooze_text: str | None = None,
         on_snooze=None,
         show_snooze: bool | None = None,
+        extend_text: str | None = None,
+        on_extend=None,
+        show_extend: bool = False,
+        show_emergency: bool = False,
+        dismiss_text: str = "Tamam",
+        show_dismiss: bool | None = None,
     ):
         self.title_label.setText(title)
         self.msg_label.setText(message)
+
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        if snooze_text:
-            self.snooze_btn.setText(snooze_text)
-        else:
-            self.snooze_btn.setText(f"{snooze_min} Dk Molayı Ertele")
-        self._on_snooze_callback = on_snooze
+        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+
         if show_snooze is None:
-            show_snooze = True
-        self.snooze_btn.setVisible(show_snooze)
+            show_snooze = True if not (show_extend or show_emergency) else False
+
+        if show_dismiss is None:
+            show_dismiss = True
+
+        self.snooze_btn.setText(snooze_text or f"{snooze_min} Dk Molayı Ertele")
+        self.snooze_btn.setVisible(bool(show_snooze))
+        self._on_snooze_callback = on_snooze
+
+        self.extend_btn.setText(extend_text or f"{extend_min} Dk Molayı Uzat")
+        self.extend_btn.setVisible(bool(show_extend))
+        self._on_extend_callback = on_extend
+
+        self.emergency_btn.setText("Acil Bitir")
+        self.emergency_btn.setVisible(bool(show_emergency))
+
+        self.dismiss_btn.setText(dismiss_text)
+        self.dismiss_btn.setVisible(bool(show_dismiss))
+
         self.adjustSize()
         self.reposition()
         self.show()
@@ -612,6 +675,12 @@ class SettingsWindow(QMainWindow):
         self.break_snooze_spin.valueChanged.connect(self._on_snooze_spin_changed)
         upnow_form.addRow("Erteleme süresi:", self.break_snooze_spin)
 
+        self.break_extend_spin = QSpinBox()
+        self.break_extend_spin.setRange(1, 60)
+        self.break_extend_spin.setSuffix(" dk")
+        self.break_extend_spin.valueChanged.connect(self._on_extend_spin_changed)
+        upnow_form.addRow("Uzatma süresi:", self.break_extend_spin)
+
         self.break_alert_combo = QComboBox()
         self.break_alert_combo.addItem("Nazik Bildirim (Sistem)", "notification")
         self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
@@ -681,6 +750,7 @@ class SettingsWindow(QMainWindow):
         self.work_duration_spin.setValue(config.work_duration_minutes)
         self.break_duration_spin.setValue(config.break_duration_minutes)
         self.break_snooze_spin.setValue(config.break_snooze_minutes)
+        self.break_extend_spin.setValue(getattr(config, "break_extend_minutes", 5))
         combo_idx = 1 if config.break_alert_mode == "nagging" else 0
         self.break_alert_combo.setCurrentIndex(combo_idx)
 
@@ -694,6 +764,10 @@ class SettingsWindow(QMainWindow):
         if hasattr(self, "tab_snooze_btn"):
             self.tab_snooze_btn.setText(text)
 
+    def _on_extend_spin_changed(self, value: int):
+        if getattr(self.controller, "nag_dialog", None) is not None:
+            self.controller.nag_dialog.extend_btn.setText(f"{value} Dakika Uzat")
+
     def update_snooze_buttons(self):
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
         text = f"{snooze_min} Dakika Ertele"
@@ -703,6 +777,8 @@ class SettingsWindow(QMainWindow):
             self.tab_snooze_btn.setText(text)
         if getattr(self.controller, "nag_dialog", None) is not None:
             self.controller.nag_dialog.snooze_btn.setText(text)
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            self.controller.nag_dialog.extend_btn.setText(f"{extend_min} Dakika Uzat")
         if getattr(self.controller, "snooze_break_action", None) is not None:
             self.controller.snooze_break_action.setText(text)
 
@@ -712,6 +788,7 @@ class SettingsWindow(QMainWindow):
         config.work_duration_minutes = self.work_duration_spin.value()
         config.break_duration_minutes = self.break_duration_spin.value()
         config.break_snooze_minutes = self.break_snooze_spin.value()
+        config.break_extend_minutes = self.break_extend_spin.value()
         selected_data = self.break_alert_combo.currentData()
         if selected_data:
             config.break_alert_mode = selected_data
@@ -1037,7 +1114,7 @@ class KeepAwakeController(QObject):
 
     def extend_break(self, minutes: int | None = None):
         if minutes is None:
-            minutes = getattr(self.config, "break_snooze_minutes", 5)
+            minutes = getattr(self.config, "break_extend_minutes", 5)
         self.break_tracker.extend_break(minutes)
         if (
             getattr(self, "nag_dialog", None) is not None
@@ -1235,6 +1312,12 @@ class KeepAwakeController(QObject):
         snooze_text: str | None = None,
         on_snooze=None,
         show_snooze: bool | None = None,
+        extend_text: str | None = None,
+        on_extend=None,
+        show_extend: bool = False,
+        show_emergency: bool = False,
+        dismiss_text: str = "Tamam",
+        show_dismiss: bool | None = None,
     ):
         # 1. Native platform notification (e.g. macOS osascript, Linux notify-send)
         try:
@@ -1251,6 +1334,12 @@ class KeepAwakeController(QObject):
                     snooze_text=snooze_text,
                     on_snooze=on_snooze,
                     show_snooze=show_snooze,
+                    extend_text=extend_text,
+                    on_extend=on_extend,
+                    show_extend=show_extend,
+                    show_emergency=show_emergency,
+                    dismiss_text=dismiss_text,
+                    show_dismiss=show_dismiss,
                 )
             except Exception:
                 pass
@@ -1277,6 +1366,7 @@ class KeepAwakeController(QObject):
                 self.nag_dialog.activateWindow()
         else:
             snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+            extend_min = getattr(self.config, "break_extend_minutes", 5)
             self.show_system_notification(
                 title,
                 msg,
@@ -1284,6 +1374,11 @@ class KeepAwakeController(QObject):
                 snooze_text=f"{snooze_min} Dk Molayı Ertele",
                 on_snooze=lambda m: self.extend_work(m),
                 show_snooze=True,
+                extend_text=f"{extend_min} Dk Molayı Uzat",
+                on_extend=lambda m: self.extend_break(m),
+                show_extend=True,
+                show_emergency=True,
+                show_dismiss=False,
             )
 
     def notify_break_finished(self):
@@ -1294,14 +1389,18 @@ class KeepAwakeController(QObject):
 
         title = "UpNow - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
-        snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+        extend_min = getattr(self.config, "break_extend_minutes", 5)
         self.show_system_notification(
             title,
             msg,
             QSystemTrayIcon.MessageIcon.Information,
-            snooze_text=f"{snooze_min} Dk Molayı Uzat",
-            on_snooze=lambda m: self.extend_break(m),
-            show_snooze=True,
+            extend_text=f"{extend_min} Dk Molayı Uzat",
+            on_extend=lambda m: self.extend_break(m),
+            show_extend=True,
+            show_dismiss=True,
+            dismiss_text="Tamam",
+            show_snooze=False,
+            show_emergency=False,
         )
 
     def trigger_break_alert(self):

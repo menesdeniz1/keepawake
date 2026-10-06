@@ -89,6 +89,16 @@ def test_break_nag_dialog_buttons(controller, monkeypatch):
     finish_spy.assert_called_once()
     assert not dialog.isVisible()
 
+    dialog.show()
+    assert dialog.isVisible()
+
+    extend_spy = MagicMock()
+    monkeypatch.setattr(controller, "extend_break", extend_spy)
+
+    dialog.extend_btn.click()
+    extend_spy.assert_called_once_with(5)
+    assert not dialog.isVisible()
+
 
 def test_settings_window_upnow_fields(controller):
     win = controller.window
@@ -97,6 +107,7 @@ def test_settings_window_upnow_fields(controller):
     assert hasattr(win, "work_duration_spin")
     assert hasattr(win, "break_duration_spin")
     assert hasattr(win, "break_snooze_spin")
+    assert hasattr(win, "break_extend_spin")
     assert hasattr(win, "break_alert_combo")
 
     assert hasattr(win, "tabs")
@@ -156,6 +167,7 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     controller.config.work_duration_minutes = 45
     controller.config.break_duration_minutes = 15
     controller.config.break_snooze_minutes = 10
+    controller.config.break_extend_minutes = 7
     controller.config.break_alert_mode = "nagging"
 
     win.load_from_config()
@@ -164,6 +176,7 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     assert win.work_duration_spin.value() == 45
     assert win.break_duration_spin.value() == 15
     assert win.break_snooze_spin.value() == 10
+    assert win.break_extend_spin.value() == 7
     assert win.break_alert_combo.currentIndex() == 1
 
     # Test save_from_window
@@ -171,6 +184,7 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     win.work_duration_spin.setValue(25)
     win.break_duration_spin.setValue(5)
     win.break_snooze_spin.setValue(8)
+    win.break_extend_spin.setValue(12)
     win.break_alert_combo.setCurrentIndex(0)
 
     assert hasattr(win, "save_from_window"), "SettingsWindow should implement save_from_window"
@@ -180,6 +194,7 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     assert controller.config.work_duration_minutes == 25
     assert controller.config.break_duration_minutes == 5
     assert controller.config.break_snooze_minutes == 8
+    assert controller.config.break_extend_minutes == 12
     assert controller.config.break_alert_mode == "notification"
 
     # Test saving via full save() method
@@ -190,11 +205,13 @@ def test_settings_window_load_and_save(controller, monkeypatch):
     win.break_enabled_check.setChecked(True)
     win.work_duration_spin.setValue(50)
     win.break_snooze_spin.setValue(12)
+    win.break_extend_spin.setValue(14)
     win.save()
 
     assert controller.config.break_reminder_enabled is True
     assert controller.config.work_duration_minutes == 50
     assert controller.config.break_snooze_minutes == 12
+    assert controller.config.break_extend_minutes == 14
     save_store_spy.assert_called_once()
 
 
@@ -415,42 +432,63 @@ def test_toast_snooze_actions_extend_work_and_break(controller):
     controller.config.break_reminder_enabled = True
     controller.config.break_alert_mode = "notification"
     controller.config.break_snooze_minutes = 5
+    controller.config.break_extend_minutes = 7
     controller.apply_config()
 
-    # 1. Molaya girerken (Break started) -> 'Molayı Ertele' ve 'Tamam' (2 şık)
+    # 1. Molaya girerken (Break started) -> 3 şık: [ Molayı Ertele ] [ Molayı Uzat ] [ Acil Bitir ]
     controller.notify_break_started()
     assert controller.toast_notification.isVisible()
     assert controller.toast_notification.snooze_btn.isVisible()
     assert "Molayı Ertele" in controller.toast_notification.snooze_btn.text()
-    assert controller.toast_notification.dismiss_btn.isVisible()
-    assert controller.toast_notification.dismiss_btn.text() == "Tamam"
+    assert controller.toast_notification.extend_btn.isVisible()
+    assert "Molayı Uzat" in controller.toast_notification.extend_btn.text()
+    assert controller.toast_notification.emergency_btn.isVisible()
+    assert "Acil Bitir" in controller.toast_notification.emergency_btn.text()
+    assert not controller.toast_notification.dismiss_btn.isVisible()
 
     controller.toast_notification.snooze_btn.click()
     # Working state extended, nudge allowed
     assert controller.break_tracker.state == BreakState.WORKING
     assert controller.break_tracker.is_nudge_allowed() is True
-    # Toast switched to feedback (without snooze button)
+    # Toast switched to feedback (without action buttons)
     assert "Mola Ertelendi" in controller.toast_notification.title_label.text()
     assert not controller.toast_notification.snooze_btn.isVisible()
+    assert not controller.toast_notification.extend_btn.isVisible()
+    assert not controller.toast_notification.emergency_btn.isVisible()
 
     controller.toast_notification.hide()
 
-    # 2. Mola bitince (Break finished) -> 'Molayı Uzat' ve 'Tamam' (2 şık)
+    # Test clicking 'Molayı Uzat' when break starts
+    controller.notify_break_started()
+    assert controller.toast_notification.isVisible()
+    assert controller.toast_notification.extend_btn.isVisible()
+    controller.toast_notification.extend_btn.click()
+    assert controller.break_tracker.state == BreakState.ON_BREAK
+    assert controller.break_tracker.is_nudge_allowed() is False
+    assert "Mola Uzatıldı" in controller.toast_notification.title_label.text()
+
+    controller.toast_notification.hide()
+
+    # 2. Mola bitince (Break finished) -> 2 şık: [ Molayı Uzat ] [ Tamam ]
     controller.notify_break_finished()
     assert controller.toast_notification.isVisible()
     assert "Mola Tamamlandı" in controller.toast_notification.title_label.text()
-    assert controller.toast_notification.snooze_btn.isVisible()
-    assert "Molayı Uzat" in controller.toast_notification.snooze_btn.text()
+    assert not controller.toast_notification.snooze_btn.isVisible()
+    assert not controller.toast_notification.emergency_btn.isVisible()
+    assert controller.toast_notification.extend_btn.isVisible()
+    assert "Molayı Uzat" in controller.toast_notification.extend_btn.text()
     assert controller.toast_notification.dismiss_btn.isVisible()
     assert controller.toast_notification.dismiss_btn.text() == "Tamam"
 
-    controller.toast_notification.snooze_btn.click()
+    controller.toast_notification.extend_btn.click()
     # Break state restored and extended, nudge locked
     assert controller.break_tracker.state == BreakState.ON_BREAK
     assert controller.break_tracker.is_nudge_allowed() is False
-    # Toast switched to feedback (without snooze button)
+    # Toast switched to feedback (without action buttons)
     assert "Mola Uzatıldı" in controller.toast_notification.title_label.text()
     assert not controller.toast_notification.snooze_btn.isVisible()
+    assert not controller.toast_notification.extend_btn.isVisible()
+    assert not controller.toast_notification.emergency_btn.isVisible()
 
     controller.toast_notification.hide()
 

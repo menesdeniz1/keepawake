@@ -43,6 +43,7 @@ class AppConfig:
     work_duration_minutes: int = 50
     break_duration_minutes: int = 10
     break_snooze_minutes: int = 5
+    break_extend_minutes: int = 5
     break_alert_mode: str = "notification"  # "notification" veya "nagging"
     break_violation_threshold_seconds: int = 15
     break_alert_cooldown_seconds: int = 60
@@ -114,7 +115,7 @@ class BreakTracker:
     def extend_break(self, minutes: int | None = None, now: datetime | None = None) -> None:
         """Molayı uzatır (çalışmaya dönmeyi erteler)."""
         if minutes is None:
-            minutes = getattr(self.config, "break_snooze_minutes", 5)
+            minutes = getattr(self.config, "break_extend_minutes", 5)
         current = now or datetime.now()
         if self.state == BreakState.PAUSED:
             self._paused_state = BreakState.ON_BREAK
