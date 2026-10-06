@@ -253,14 +253,6 @@ class SettingsWindow(QMainWindow):
         self.dash_ka_status = QLabel()
         self.dash_ka_status.setWordWrap(True)
         dash_ka_layout.addWidget(self.dash_ka_status)
-
-        dash_ka_btn_row = QHBoxLayout()
-        dash_ka_btn_row.addStretch()
-        self.dash_to_ka_btn = QPushButton("KeepAwake Ayarları →")
-        self.dash_to_ka_btn.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
-        dash_ka_btn_row.addWidget(self.dash_to_ka_btn)
-        dash_ka_layout.addLayout(dash_ka_btn_row)
-
         dashboard_layout.addWidget(dash_ka_box)
 
         # UpNow Özet Kartı
@@ -280,11 +272,6 @@ class SettingsWindow(QMainWindow):
         dash_upnow_actions.addWidget(self.dash_snooze_btn)
 
         dash_upnow_actions.addStretch()
-
-        self.dash_to_upnow_btn = QPushButton("UpNow Ayarları →")
-        self.dash_to_upnow_btn.clicked.connect(lambda: self.tabs.setCurrentIndex(2))
-        dash_upnow_actions.addWidget(self.dash_to_upnow_btn)
-
         dash_upnow_layout.addLayout(dash_upnow_actions)
         dashboard_layout.addWidget(dash_upnow_box)
         dashboard_layout.addStretch()
@@ -597,7 +584,7 @@ class SettingsWindow(QMainWindow):
         )
 
     def refresh_status(self):
-        ka_text = self.controller.status_text()
+        ka_text = self.controller.keepawake_status_text()
         self.status_label.setText(ka_text)
         if hasattr(self, "dash_ka_status"):
             self.dash_ka_status.setText(ka_text)
@@ -943,7 +930,7 @@ class KeepAwakeController(QObject):
                     5000,
                 )
 
-    def status_text(
+    def keepawake_status_text(
         self,
         now: datetime | None = None,
         idle: float | None = None,
@@ -1000,10 +987,20 @@ class KeepAwakeController(QObject):
                     f"son cooldown {self.last_cooldown_seconds:.1f} sn"
                 )
 
-        if self.config.break_reminder_enabled or self.break_tracker.state != BreakState.DISABLED:
-            parts.append(self.break_tracker.status_text(now))
-
         return " · ".join(parts)
+
+    def status_text(
+        self,
+        now: datetime | None = None,
+        idle: float | None = None,
+    ) -> str:
+        now = now or datetime.now()
+        ka_text = self.keepawake_status_text(now=now, idle=idle)
+
+        if self.config.break_reminder_enabled or self.break_tracker.state != BreakState.DISABLED:
+            return f"{ka_text} · {self.break_tracker.status_text(now)}"
+
+        return ka_text
 
     def show_settings(self):
         self.window.load_from_config()

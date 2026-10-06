@@ -172,3 +172,19 @@ def test_controller_status_text_includes_break_info(controller, monkeypatch):
     status_break = controller.status_text(now=start_time)
     assert "Mola: 10:00 kaldı (Masadan Kalk!)" in status_break
     assert "mouse nudge duraklatıldı (mola)" in status_break
+
+
+def test_controller_keepawake_status_text_never_includes_break_info(controller):
+    controller.config.enabled = True
+    controller.config.break_reminder_enabled = True
+    controller.apply_config()
+
+    # Even when break tracker is enabled and working, keepawake_status_text excludes it
+    ka_status = controller.keepawake_status_text()
+    assert "Odaklanma" not in ka_status
+    assert "Mola:" not in ka_status
+
+    # Global status_text still includes it for tray tooltip
+    global_status = controller.status_text()
+    assert "Odaklanma" in global_status
+

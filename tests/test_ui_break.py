@@ -105,10 +105,43 @@ def test_settings_window_upnow_fields(controller):
     assert "UpNow" in win.tabs.tabText(2)
     assert hasattr(win, "status_label")
     assert hasattr(win, "upnow_status_label")
+    assert hasattr(win, "dash_ka_status")
+    assert hasattr(win, "dash_upnow_status")
+    assert hasattr(win, "dash_start_break_btn")
+    assert hasattr(win, "dash_snooze_btn")
+    assert not hasattr(win, "dash_to_ka_btn")
+    assert not hasattr(win, "dash_to_upnow_btn")
     assert hasattr(win, "tab_start_break_btn")
     assert hasattr(win, "tab_snooze_btn")
     assert hasattr(win, "save_button")
     assert hasattr(win, "hide_button")
+
+
+def test_settings_window_dashboard_status_separation(controller):
+    win = controller.window
+    controller.config.enabled = True
+    controller.config.break_reminder_enabled = True
+    controller.apply_config()
+    win.refresh_status()
+
+    # KeepAwake status must NOT contain 'Odaklanma'
+    assert "Odaklanma" not in win.dash_ka_status.text()
+    assert "Odaklanma" not in win.status_label.text()
+
+    # UpNow status must contain 'Odaklanma' during working phase
+    assert "Odaklanma" in win.dash_upnow_status.text()
+    assert "Odaklanma" in win.upnow_status_label.text()
+
+    # When disabled, both must show identical '⚪ Devre dışı'
+    controller.config.enabled = False
+    controller.config.break_reminder_enabled = False
+    controller.apply_config()
+    win.refresh_status()
+
+    assert win.dash_ka_status.text() == "⚪ Devre dışı"
+    assert win.status_label.text() == "⚪ Devre dışı"
+    assert win.dash_upnow_status.text() == "⚪ Devre dışı"
+    assert win.upnow_status_label.text() == "⚪ Devre dışı"
 
 
 def test_settings_window_load_and_save(controller, monkeypatch):
