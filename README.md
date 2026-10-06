@@ -49,7 +49,7 @@ Henüz bir `.deb`/AppImage paketi yok; Linux'ta doğrudan
 - Başlangıçta hiçbir ayar penceresi göstermez; direkt system tray'e düşer.
 - Başlat menüsünden veya dock/spotlight'tan elle açılırsa Ayarlar ekranını gösterir.
 - Penceredeki `X` uygulamayı kapatmaz, tekrar tray'e küçültür.
-- Tray menüsündeki `Çıkış` gerçekten uygulamayı kapatır.
+- Tray menüsündeki `Uygulamadan Çık` gerçekten uygulamayı kapatır.
 - İkinci kez açılırsa ikinci tray ikonu oluşturmaz; mevcut pencereyi öne getirir.
 
 ## Ayarlanabilenler

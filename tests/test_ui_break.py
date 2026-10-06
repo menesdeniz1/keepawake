@@ -328,6 +328,7 @@ def test_tray_menu_actions(controller):
     assert "Molayı Şimdi Başlat" in actions
     assert "5 Dakika Ertele" in actions
     assert "Mola Takibini Duraklat / Devam Ettir" in actions
+    assert "Uygulamadan Çık" in actions
 
 
 def test_controller_break_action_triggers(controller, monkeypatch):
