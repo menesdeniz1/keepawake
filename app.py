@@ -959,7 +959,7 @@ class KeepAwakeController(QObject):
         update_action.triggered.connect(self.check_for_updates_manual)
         self.menu.addAction(update_action)
 
-        self.enable_action = QAction("Etkin")
+        self.enable_action = QAction("KeepAwake")
         self.enable_action.setCheckable(True)
         self.enable_action.setChecked(self.config.enabled)
         self.enable_action.toggled.connect(self.set_enabled_from_tray)
@@ -983,7 +983,7 @@ class KeepAwakeController(QObject):
 
         self.menu.addSeparator()
 
-        self.break_action = QAction("Mola Takipçisi (UpNow)")
+        self.break_action = QAction("UpNow")
         self.break_action.setCheckable(True)
         self.break_action.setChecked(self.config.break_reminder_enabled)
         self.break_action.toggled.connect(self.set_break_reminder_enabled_from_tray)
@@ -1495,10 +1495,7 @@ class KeepAwakeController(QObject):
         self.window.activateWindow()
 
     def on_tray_activated(self, reason):
-        if reason in (
-            QSystemTrayIcon.ActivationReason.DoubleClick,
-            QSystemTrayIcon.ActivationReason.Trigger,
-        ):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.show_settings()
 
     def handle_ipc_command(self, command: str):

@@ -316,8 +316,11 @@ def test_dashboard_toggle_buttons(controller):
 def test_tray_menu_actions(controller):
     actions = {action.text(): action for action in controller.menu.actions()}
 
-    assert "Mola Takipçisi (UpNow)" in actions
-    upnow_action = actions["Mola Takipçisi (UpNow)"]
+    assert "KeepAwake" in actions
+    assert actions["KeepAwake"].isCheckable()
+
+    assert "UpNow" in actions
+    upnow_action = actions["UpNow"]
     assert upnow_action.isCheckable()
 
     assert "Molayı Şimdi Başlat" in actions
