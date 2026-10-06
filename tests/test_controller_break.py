@@ -57,7 +57,7 @@ def test_controller_suppresses_nudge_during_break(controller, monkeypatch):
     controller.break_tracker.update_config(controller.config)
 
     # Force tracker into ON_BREAK
-    start_time = datetime(2026, 10, 6, 10, 0, 0)
+    start_time = datetime.now()
     controller.break_tracker.start_break_now(now=start_time)
     assert controller.break_tracker.state == BreakState.ON_BREAK
     assert controller.break_tracker.is_nudge_allowed() is False
@@ -78,10 +78,10 @@ def test_controller_suppresses_nudge_during_break_violation(controller, monkeypa
     controller.config.break_reminder_enabled = True
     controller.break_tracker.update_config(controller.config)
 
-    start_time = datetime(2026, 10, 6, 10, 0, 0)
+    start_time = datetime.now()
     controller.break_tracker.start_break_now(now=start_time)
     # Trigger violation via movement (idle_seconds = 2.0 < threshold)
-    controller.break_tracker.tick(now=start_time + timedelta(seconds=10), idle_seconds=2.0)
+    controller.break_tracker.tick(now=start_time, idle_seconds=2.0)
     assert controller.break_tracker.state == BreakState.BREAK_VIOLATION
     assert controller.break_tracker.is_nudge_allowed() is False
 
@@ -132,7 +132,7 @@ def test_controller_triggers_break_alert_on_violation(controller, monkeypatch):
     controller.config.break_reminder_enabled = True
     controller.break_tracker.update_config(controller.config)
 
-    start_time = datetime(2026, 10, 6, 10, 0, 0)
+    start_time = datetime.now()
     controller.break_tracker.start_break_now(now=start_time)
 
     # Idle = 2s triggers violation
@@ -167,7 +167,7 @@ def test_controller_status_text_includes_break_info(controller, monkeypatch):
     assert "Odaklanma" in status_working
 
     # Break active -> includes break countdown and pause note on mouse nudge
-    start_time = datetime(2026, 10, 6, 10, 0, 0)
+    start_time = datetime.now()
     controller.break_tracker.start_break_now(now=start_time)
     status_break = controller.status_text(now=start_time)
     assert "Mola: 10:00 kaldı (Masadan Kalk!)" in status_break
