@@ -47,6 +47,7 @@ class AppConfig:
     break_alert_mode: str = "notification"  # "notification" veya "nagging"
     break_violation_threshold_seconds: int = 15
     break_alert_cooldown_seconds: int = 60
+    break_floating_timer_enabled: bool = True
 
     def __post_init__(self):
         if self.days is None:

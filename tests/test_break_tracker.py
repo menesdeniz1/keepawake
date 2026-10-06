@@ -14,6 +14,15 @@ def test_app_config_break_defaults():
     assert config.break_alert_mode == "notification"
     assert config.break_violation_threshold_seconds == 15
     assert config.break_alert_cooldown_seconds == 60
+    assert config.break_floating_timer_enabled is True
+
+
+def test_app_config_floating_timer():
+    config = AppConfig()
+    assert hasattr(config, "break_floating_timer_enabled")
+    assert config.break_floating_timer_enabled is True
+    config.break_floating_timer_enabled = False
+    assert config.break_floating_timer_enabled is False
 
 
 def test_break_tracker_transitions():
