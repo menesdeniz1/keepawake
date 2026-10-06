@@ -316,6 +316,8 @@ def test_dashboard_toggle_buttons(controller):
 def test_tray_menu_actions(controller):
     actions = {action.text(): action for action in controller.menu.actions()}
 
+    assert "Uygulamayı Aç" in actions
+
     assert "KeepAwake" in actions
     assert actions["KeepAwake"].isCheckable()
 

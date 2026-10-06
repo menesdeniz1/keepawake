@@ -945,15 +945,19 @@ class KeepAwakeController(QObject):
 
         self.menu = QMenu()
 
+        self.open_action = QAction("Uygulamayı Aç")
+        font = self.open_action.font()
+        font.setBold(True)
+        self.open_action.setFont(font)
+        self.open_action.triggered.connect(self.show_settings)
+        self.menu.addAction(self.open_action)
+        self.menu.setDefaultAction(self.open_action)
+
         self.status_action = QAction("Durum hazırlanıyor…")
-        self.status_action.setEnabled(False)
+        self.status_action.triggered.connect(self.show_settings)
         self.menu.addAction(self.status_action)
 
         self.menu.addSeparator()
-
-        open_action = QAction("Ayarları Aç")
-        open_action.triggered.connect(self.show_settings)
-        self.menu.addAction(open_action)
 
         update_action = QAction("Güncellemeleri Kontrol Et")
         update_action.triggered.connect(self.check_for_updates_manual)
@@ -1495,8 +1499,15 @@ class KeepAwakeController(QObject):
         self.window.activateWindow()
 
     def on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.show_settings()
+        if sys.platform != "darwin":
+            if reason in (
+                QSystemTrayIcon.ActivationReason.DoubleClick,
+                QSystemTrayIcon.ActivationReason.Trigger,
+            ):
+                self.show_settings()
+        else:
+            if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+                self.show_settings()
 
     def handle_ipc_command(self, command: str):
         command = command.upper()
