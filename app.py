@@ -267,8 +267,8 @@ class SettingsWindow(QMainWindow):
         self.controller = controller
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
-        self.setMinimumWidth(540)
-        self.setMinimumHeight(560)
+        self.setMinimumWidth(560)
+        self.setMinimumHeight(520)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -276,23 +276,35 @@ class SettingsWindow(QMainWindow):
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(10)
 
-        # Tüm sayfa QScrollArea ile sarılarak küçük ekranlarda ezilme önlenir
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.tabs = QTabWidget()
 
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(4, 4, 8, 4)
-        content_layout.setSpacing(14)
+        # ==========================================
+        # --- SEKME 1: KeepAwake (Uyanık Tutucu) ---
+        # ==========================================
+        keepawake_scroll = QScrollArea()
+        keepawake_scroll.setWidgetResizable(True)
+        keepawake_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        keepawake_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        keepawake_page = QWidget()
+        keepawake_layout = QVBoxLayout(keepawake_page)
+        keepawake_layout.setContentsMargins(6, 6, 10, 6)
+        keepawake_layout.setSpacing(12)
 
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("font-size: 13px; padding: 4px 2px; color: #334155;")
-        content_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("""
+            QLabel {
+                font-size: 13px;
+                padding: 8px 12px;
+                border-radius: 6px;
+                background-color: rgba(148, 163, 184, 0.12);
+                color: #334155;
+            }
+        """)
+        keepawake_layout.addWidget(self.status_label)
 
-        # Genel
+        # Genel Grubu
         general_box = QGroupBox("Genel")
         general_form = QFormLayout(general_box)
 
@@ -325,9 +337,9 @@ class SettingsWindow(QMainWindow):
         )
         general_form.addRow(lbl_check, spin_check)
 
-        content_layout.addWidget(general_box)
+        keepawake_layout.addWidget(general_box)
 
-        # Çalışma programı
+        # Çalışma Programı Grubu
         schedule_box = QGroupBox("Çalışma programı")
         schedule_layout = QVBoxLayout(schedule_box)
 
@@ -354,9 +366,9 @@ class SettingsWindow(QMainWindow):
         time_form.addRow("Bitiş:", self.end_edit)
         schedule_layout.addLayout(time_form)
 
-        content_layout.addWidget(schedule_box)
+        keepawake_layout.addWidget(schedule_box)
 
-        # Güç davranışı
+        # Güç Davranışı Grubu
         behavior_box = QGroupBox("Güç davranışı")
         behavior_layout = QVBoxLayout(behavior_box)
 
@@ -411,11 +423,41 @@ class SettingsWindow(QMainWindow):
         cooldown_form.addRow(lbl_cmax, spin_cmax)
         behavior_layout.addLayout(cooldown_form)
 
-        # Uzun ezilen metin etiketi kaldırıldı; butonumsu ⓘ info rozeti ile değiştirildi.
-        content_layout.addWidget(behavior_box)
+        # Uzun ezilen metin kaldırıldı; rozet ile hover bulutuna taşındı
+        keepawake_layout.addWidget(behavior_box)
+        keepawake_layout.addStretch()
 
-        # UpNow - Mola & Ayakta Kalma Takipçisi
-        upnow_box = QGroupBox("UpNow - Mola & Ayakta Kalma Takipçisi")
+        keepawake_scroll.setWidget(keepawake_page)
+        self.tabs.addTab(keepawake_scroll, "KeepAwake (Uyanık Tutucu)")
+
+        # ==========================================
+        # --- SEKME 2: UpNow (Mola Takipçisi) ---
+        # ==========================================
+        upnow_scroll = QScrollArea()
+        upnow_scroll.setWidgetResizable(True)
+        upnow_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        upnow_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        upnow_page = QWidget()
+        upnow_layout = QVBoxLayout(upnow_page)
+        upnow_layout.setContentsMargins(6, 6, 10, 6)
+        upnow_layout.setSpacing(12)
+
+        self.upnow_status_label = QLabel()
+        self.upnow_status_label.setWordWrap(True)
+        self.upnow_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 13px;
+                padding: 8px 12px;
+                border-radius: 6px;
+                background-color: rgba(148, 163, 184, 0.12);
+                color: #334155;
+            }
+        """)
+        upnow_layout.addWidget(self.upnow_status_label)
+
+        # UpNow Ayarlar Grubu
+        upnow_box = QGroupBox("Mola & Ayakta Kalma Yapılandırması")
         upnow_form = QFormLayout(upnow_box)
 
         self.break_enabled_check = QCheckBox("UpNow mola takipçisini etkinleştir")
@@ -451,11 +493,26 @@ class SettingsWindow(QMainWindow):
         )
         upnow_form.addRow(lbl_alert, combo_alert)
 
-        content_layout.addWidget(upnow_box)
-        content_layout.addStretch()
+        upnow_layout.addWidget(upnow_box)
 
-        scroll.setWidget(content)
-        root.addWidget(scroll)
+        # Hızlı Mola Aksiyonları
+        actions_box = QGroupBox("Hızlı Mola Aksiyonları")
+        actions_layout = QHBoxLayout(actions_box)
+        self.tab_start_break_btn = QPushButton("Molayı Şimdi Başlat")
+        self.tab_start_break_btn.clicked.connect(self.controller.start_break_now)
+        actions_layout.addWidget(self.tab_start_break_btn)
+
+        self.tab_snooze_btn = QPushButton("5 Dakika Ertele")
+        self.tab_snooze_btn.clicked.connect(lambda: self.controller.snooze_break(5))
+        actions_layout.addWidget(self.tab_snooze_btn)
+
+        upnow_layout.addWidget(actions_box)
+        upnow_layout.addStretch()
+
+        upnow_scroll.setWidget(upnow_page)
+        self.tabs.addTab(upnow_scroll, "UpNow (Mola Takipçisi)")
+
+        root.addWidget(self.tabs)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -479,6 +536,10 @@ class SettingsWindow(QMainWindow):
                 padding: 8px 12px;
                 font-size: 12px;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            }
+            QTabBar::tab {
+                padding: 8px 16px;
+                font-weight: 600;
             }
             QPushButton {
                 padding: 6px 14px;
@@ -601,7 +662,18 @@ class SettingsWindow(QMainWindow):
         )
 
     def refresh_status(self):
-        self.status_label.setText(self.controller.status_text())
+        if self.controller.config.enabled:
+            self.status_label.setText(self.controller.status_text())
+        else:
+            self.status_label.setText("⚪ KeepAwake devre dışı")
+
+        if hasattr(self, "upnow_status_label"):
+            if self.controller.config.break_reminder_enabled:
+                from datetime import datetime
+                tracker_status = self.controller.break_tracker.status_text(datetime.now())
+                self.upnow_status_label.setText(f"🟢 UpNow aktif · {tracker_status}")
+            else:
+                self.upnow_status_label.setText("⚪ UpNow devre dışı")
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
