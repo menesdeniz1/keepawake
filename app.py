@@ -853,7 +853,16 @@ class SettingsWindow(QMainWindow):
             )
             return
 
-        self.controller.store.save(config)
+        try:
+            self.controller.store.save(config)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                APP_NAME,
+                f"Ayarlar kaydedilemedi:\n{exc}",
+            )
+            return
+
         self.controller.apply_config()
         self.update_snooze_buttons()
         self.refresh_status()
@@ -1070,13 +1079,19 @@ class KeepAwakeController(QObject):
 
     def set_enabled_from_tray(self, checked: bool):
         self.config.enabled = checked
-        self.store.save(self.config)
+        try:
+            self.store.save(self.config)
+        except Exception:
+            pass
         self.window.load_from_config()
         self.tick()
 
     def set_break_reminder_enabled_from_tray(self, checked: bool):
         self.config.break_reminder_enabled = checked
-        self.store.save(self.config)
+        try:
+            self.store.save(self.config)
+        except Exception:
+            pass
         self.window.load_from_config()
         self.apply_config()
 
