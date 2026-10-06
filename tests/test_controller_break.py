@@ -24,6 +24,7 @@ def controller(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr("app.set_execution_state", lambda *a, **kw: True)
     monkeypatch.setattr("app.clear_execution_state", lambda: None)
     monkeypatch.setattr("app.nudge_mouse", lambda: True)
+    monkeypatch.setattr("app.get_idle_seconds", lambda: 60.0)
 
     import app as ka
 

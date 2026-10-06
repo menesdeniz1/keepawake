@@ -1,5 +1,6 @@
 import hashlib
 import http.server
+import socket
 import sys
 import threading
 from pathlib import Path
@@ -42,7 +43,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
 @pytest.fixture(scope="module")
 def local_server():
-    server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+    try:
+        probe_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe_sock.bind(("127.0.0.1", 0))
+        port = probe_sock.getsockname()[1]
+        probe_sock.listen(1)
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock.connect(("127.0.0.1", port))
+        client_sock.close()
+        probe_sock.close()
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+    except (PermissionError, OSError):
+        pytest.skip("Socket loopback restricted in sandbox environment")
+
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield server
