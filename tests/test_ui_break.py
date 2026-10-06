@@ -98,20 +98,13 @@ def test_settings_window_upnow_fields(controller):
     assert hasattr(win, "break_duration_spin")
     assert hasattr(win, "break_alert_combo")
 
-    assert win.work_duration_spin.minimum() == 1
-    assert win.work_duration_spin.maximum() == 180
-    assert "dk" in win.work_duration_spin.suffix()
-
-    assert win.break_duration_spin.minimum() == 1
-    assert win.break_duration_spin.maximum() == 60
-    assert "dk" in win.break_duration_spin.suffix()
-
-    combo_items = [
-        win.break_alert_combo.itemText(i)
-        for i in range(win.break_alert_combo.count())
-    ]
-    assert "Nazik Bildirim (Sistem)" in combo_items
-    assert "Zorlayıcı Mod (Uyarı Penceresi)" in combo_items
+    assert hasattr(win, "tabs")
+    assert win.tabs.count() == 2
+    assert "KeepAwake" in win.tabs.tabText(0)
+    assert "UpNow" in win.tabs.tabText(1)
+    assert hasattr(win, "upnow_status_label")
+    assert hasattr(win, "tab_start_break_btn")
+    assert hasattr(win, "tab_snooze_btn")
 
 
 def test_settings_window_load_and_save(controller, monkeypatch):

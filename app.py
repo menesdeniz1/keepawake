@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStyle,
     QSystemTrayIcon,
+    QTabWidget,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
@@ -233,9 +234,15 @@ class SettingsWindow(QMainWindow):
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
 
+        self.tabs = QTabWidget()
+
+        # --- Sekme 1: KeepAwake (Uyanık Tutucu) ---
+        keepawake_page = QWidget()
+        keepawake_layout = QVBoxLayout(keepawake_page)
+
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        root.addWidget(self.status_label)
+        keepawake_layout.addWidget(self.status_label)
 
         general_box = QGroupBox("Genel")
         general_form = QFormLayout(general_box)
@@ -259,7 +266,7 @@ class SettingsWindow(QMainWindow):
         self.check_spin.setSuffix(" saniye")
         general_form.addRow("Kontrol sıklığı:", self.check_spin)
 
-        root.addWidget(general_box)
+        keepawake_layout.addWidget(general_box)
 
         schedule_box = QGroupBox("Çalışma programı")
         schedule_layout = QVBoxLayout(schedule_box)
@@ -287,7 +294,7 @@ class SettingsWindow(QMainWindow):
         time_form.addRow("Bitiş:", self.end_edit)
         schedule_layout.addLayout(time_form)
 
-        root.addWidget(schedule_box)
+        keepawake_layout.addWidget(schedule_box)
 
         behavior_box = QGroupBox("Güç davranışı")
         behavior_layout = QVBoxLayout(behavior_box)
@@ -336,12 +343,24 @@ class SettingsWindow(QMainWindow):
         note.setStyleSheet("color: gray;")
         behavior_layout.addWidget(note)
 
-        root.addWidget(behavior_box)
+        keepawake_layout.addWidget(behavior_box)
+        keepawake_layout.addStretch()
 
-        upnow_box = QGroupBox("UpNow - Mola & Ayakta Kalma Takipçisi")
+        self.tabs.addTab(keepawake_page, "KeepAwake (Uyanık Tutucu)")
+
+        # --- Sekme 2: UpNow (Mola Takipçisi) ---
+        upnow_page = QWidget()
+        upnow_layout = QVBoxLayout(upnow_page)
+
+        self.upnow_status_label = QLabel()
+        self.upnow_status_label.setWordWrap(True)
+        self.upnow_status_label.setStyleSheet("font-weight: bold; padding: 6px; background-color: #2b2d42; color: #edf2f4; border-radius: 6px;")
+        upnow_layout.addWidget(self.upnow_status_label)
+
+        upnow_box = QGroupBox("Mola & Ayakta Kalma Ayarları")
         upnow_form = QFormLayout(upnow_box)
 
-        self.break_enabled_check = QCheckBox("Mola takipçisini etkinleştir")
+        self.break_enabled_check = QCheckBox("UpNow mola takipçisini etkinleştir")
         upnow_form.addRow(self.break_enabled_check)
 
         self.work_duration_spin = QSpinBox()
@@ -359,7 +378,24 @@ class SettingsWindow(QMainWindow):
         self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
         upnow_form.addRow("Uyarı modu:", self.break_alert_combo)
 
-        root.addWidget(upnow_box)
+        upnow_layout.addWidget(upnow_box)
+
+        actions_box = QGroupBox("Hızlı Mola Aksiyonları")
+        actions_layout = QHBoxLayout(actions_box)
+        self.tab_start_break_btn = QPushButton("Molayı Şimdi Başlat")
+        self.tab_start_break_btn.clicked.connect(self.controller.start_break_now)
+        actions_layout.addWidget(self.tab_start_break_btn)
+
+        self.tab_snooze_btn = QPushButton("5 Dakika Ertele")
+        self.tab_snooze_btn.clicked.connect(lambda: self.controller.snooze_break(5))
+        actions_layout.addWidget(self.tab_snooze_btn)
+
+        upnow_layout.addWidget(actions_box)
+        upnow_layout.addStretch()
+
+        self.tabs.addTab(upnow_page, "UpNow (Mola Takipçisi)")
+
+        root.addWidget(self.tabs)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -490,6 +526,13 @@ class SettingsWindow(QMainWindow):
 
     def refresh_status(self):
         self.status_label.setText(self.controller.status_text())
+        if hasattr(self, "upnow_status_label"):
+            if self.controller.config.break_reminder_enabled:
+                from datetime import datetime
+                tracker_status = self.controller.break_tracker.status_text(datetime.now())
+                self.upnow_status_label.setText(f"UpNow Durumu: {tracker_status}")
+            else:
+                self.upnow_status_label.setText("UpNow Mola Takipçisi şu anda devre dışı.")
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
