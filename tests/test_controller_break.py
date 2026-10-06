@@ -171,7 +171,7 @@ def test_controller_status_text_includes_break_info(controller, monkeypatch):
     controller.break_tracker.start_break_now(now=start_time)
     status_break = controller.status_text(now=start_time)
     assert "Mola: 10:00 kaldı (Masadan Kalk!)" in status_break
-    assert "Mouse nudge duraklatıldı (mola)" in status_break
+    assert "Mouse Nudge: duraklatıldı (mola)" in status_break
 
 
 def test_controller_keepawake_status_text_never_includes_break_info(controller):
@@ -196,7 +196,7 @@ def test_controller_keepawake_status_text_no_redundant_keepawake_ack(controller)
     controller.apply_config()
 
     ka_status = controller.keepawake_status_text()
-    assert ka_status.startswith("🟢 Mouse nudge")
+    assert ka_status.startswith("🟢 Mouse Nudge:")
     # Redundant "Program aktif" and "keep-awake açık" must NOT be present
     assert "Program aktif" not in ka_status
     assert "keep-awake açık" not in ka_status

@@ -1017,19 +1017,19 @@ class KeepAwakeController(QObject):
             threshold = self.config.idle_minutes * 60
 
             if not self.break_tracker.is_nudge_allowed():
-                parts.append("Mouse nudge duraklatıldı (mola)")
+                parts.append("Mouse Nudge: duraklatıldı (mola)")
             elif self.cooldown_active(now):
                 remaining_cd = (self.cooldown_until - now).total_seconds()
                 parts.append(
-                    f"Cooldown {format_duration(remaining_cd)}"
+                    f"Mouse Nudge: cooldown {format_duration(remaining_cd)}"
                 )
             elif idle < threshold:
                 remaining = threshold - idle
                 parts.append(
-                    f"Mouse nudge {format_duration(remaining)} sonra"
+                    f"Mouse Nudge: {format_duration(remaining)} sonra"
                 )
             else:
-                parts.append("Mouse nudge bekleniyor")
+                parts.append("Mouse Nudge: bekleniyor")
 
             if self.last_nudge_at is not None:
                 result = "başarılı" if self.last_nudge_ok else "başarısız"
