@@ -601,10 +601,10 @@ class SettingsWindow(QMainWindow):
         info_badge.setCursor(Qt.CursorShape.PointingHandCursor)
         info_badge.setStyleSheet("color: gray; font-size: 13px; font-weight: bold; padding-left: 4px;")
         info_badge.setToolTip(
-            "Mouse input yalnızca idle eşiğine ulaşıldığında 1 px sağa ve "
+            "Fare simülasyonu yalnızca idle eşiğine ulaşıldığında 1 px sağa ve "
             "tekrar sola mikro hareket üretir.\n"
             "Bu sayede bilgisayarın kilitlenmesi veya uykuya dalması engellenir.\n"
-            "Başarılı nudge sonrasında sistem belirlenen cooldown aralığında bekler."
+            "Başarılı hareket sonrasında sistem belirlenen bekleme aralığında bekler."
         )
         mouse_row.addWidget(self.mouse_input_cb)
         mouse_row.addWidget(info_badge)
@@ -625,11 +625,11 @@ class SettingsWindow(QMainWindow):
         self.cooldown_max_spin.setSuffix(" saniye")
 
         cooldown_form.addRow(
-            "Nudge sonrası min. cooldown:",
+            "Hareket sonrası min. bekleme:",
             self.cooldown_min_spin,
         )
         cooldown_form.addRow(
-            "Nudge sonrası maks. cooldown:",
+            "Hareket sonrası maks. bekleme:",
             self.cooldown_max_spin,
         )
         behavior_layout.addLayout(cooldown_form)
@@ -1446,29 +1446,29 @@ class KeepAwakeController(QObject):
             threshold = self.config.idle_minutes * 60
 
             if not self.break_tracker.is_nudge_allowed():
-                parts.append("Mouse Nudge: duraklatıldı (mola)")
+                parts.append("Uyanıklık: duraklatıldı (mola)")
             elif self.cooldown_active(now):
                 remaining_cd = (self.cooldown_until - now).total_seconds()
                 parts.append(
-                    f"Mouse Nudge: cooldown {format_duration(remaining_cd)}"
+                    f"Uyanıklık: beklemede {format_duration(remaining_cd)}"
                 )
             elif idle < threshold:
                 remaining = threshold - idle
                 parts.append(
-                    f"Mouse Nudge: {format_duration(remaining)} sonra"
+                    f"Uyanıklık: {format_duration(remaining)} sonra"
                 )
             else:
-                parts.append("Mouse Nudge: bekleniyor")
+                parts.append("Uyanıklık: bekleniyor")
 
             if self.last_nudge_at is not None:
                 result = "başarılı" if self.last_nudge_ok else "başarısız"
                 parts.append(
-                    f"son nudge {self.last_nudge_at.strftime('%H:%M:%S')} {result}"
+                    f"son hareket {self.last_nudge_at.strftime('%H:%M:%S')} {result}"
                 )
 
             if self.last_cooldown_seconds is not None:
                 parts.append(
-                    f"son cooldown {self.last_cooldown_seconds:.1f} sn"
+                    f"son bekleme {self.last_cooldown_seconds:.1f} sn"
                 )
         else:
             parts.append("Aktif")
