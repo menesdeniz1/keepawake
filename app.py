@@ -224,63 +224,21 @@ class BreakNagDialog(QDialog):
         self.hide()
 
 
-def make_info_badge(tooltip_text: str) -> QLabel:
-    badge = QLabel("ⓘ")
-    badge.setCursor(Qt.CursorShape.PointingHandCursor)
-    badge.setToolTip(tooltip_text)
-    badge.setStyleSheet("""
-        QLabel {
-            color: #3b82f6;
-            font-size: 13px;
-            font-weight: bold;
-            padding: 1px 5px;
-            border-radius: 8px;
-            background-color: rgba(59, 130, 246, 0.12);
-        }
-        QLabel:hover {
-            color: #60a5fa;
-            background-color: rgba(59, 130, 246, 0.28);
-        }
-    """)
-    return badge
-
-
-def make_form_row(label_text: str, widget: QWidget, tooltip_text: str | None = None) -> tuple[QWidget, QWidget]:
-    if not tooltip_text:
-        return QLabel(label_text), widget
-
-    container = QWidget()
-    row = QHBoxLayout(container)
-    row.setContentsMargins(0, 0, 0, 0)
-    row.setSpacing(4)
-    lbl = QLabel(label_text)
-    badge = make_info_badge(tooltip_text)
-    row.addWidget(lbl)
-    row.addWidget(badge)
-    row.addStretch()
-    return container, widget
-
-
 class SettingsWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
-        self.setMinimumWidth(560)
-        self.setMinimumHeight(520)
+        self.setMinimumWidth(540)
 
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(14, 14, 14, 14)
-        root.setSpacing(10)
 
         self.tabs = QTabWidget()
 
-        # ==========================================
-        # --- SEKME 1: KeepAwake (Uyanık Tutucu) ---
-        # ==========================================
+        # --- Sekme 1: KeepAwake (Uyanık Tutucu) ---
         keepawake_scroll = QScrollArea()
         keepawake_scroll.setWidgetResizable(True)
         keepawake_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -288,23 +246,11 @@ class SettingsWindow(QMainWindow):
 
         keepawake_page = QWidget()
         keepawake_layout = QVBoxLayout(keepawake_page)
-        keepawake_layout.setContentsMargins(6, 6, 10, 6)
-        keepawake_layout.setSpacing(12)
 
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 13px;
-                padding: 8px 12px;
-                border-radius: 6px;
-                background-color: rgba(148, 163, 184, 0.12);
-                color: #334155;
-            }
-        """)
         keepawake_layout.addWidget(self.status_label)
 
-        # Genel Grubu
         general_box = QGroupBox("Genel")
         general_form = QFormLayout(general_box)
 
@@ -320,26 +266,15 @@ class SettingsWindow(QMainWindow):
         self.idle_spin = QSpinBox()
         self.idle_spin.setRange(1, 240)
         self.idle_spin.setSuffix(" dakika")
-        lbl_idle, spin_idle = make_form_row(
-            "Idle eşiği:",
-            self.idle_spin,
-            "Kullanıcı bu süre boyunca klavye veya fareye dokunmazsa bilgisayar boşta (idle) kabul edilir.",
-        )
-        general_form.addRow(lbl_idle, spin_idle)
+        general_form.addRow("Idle eşiği:", self.idle_spin)
 
         self.check_spin = QSpinBox()
         self.check_spin.setRange(1, 60)
         self.check_spin.setSuffix(" saniye")
-        lbl_check, spin_check = make_form_row(
-            "Kontrol sıklığı:",
-            self.check_spin,
-            "Zamanlayıcı ve boşta kalma kontrollerinin kaç saniyede bir tekrarlanacağı.",
-        )
-        general_form.addRow(lbl_check, spin_check)
+        general_form.addRow("Kontrol sıklığı:", self.check_spin)
 
         keepawake_layout.addWidget(general_box)
 
-        # Çalışma Programı Grubu
         schedule_box = QGroupBox("Çalışma programı")
         schedule_layout = QVBoxLayout(schedule_box)
 
@@ -368,7 +303,6 @@ class SettingsWindow(QMainWindow):
 
         keepawake_layout.addWidget(schedule_box)
 
-        # Güç Davranışı Grubu
         behavior_box = QGroupBox("Güç davranışı")
         behavior_layout = QVBoxLayout(behavior_box)
 
@@ -379,25 +313,27 @@ class SettingsWindow(QMainWindow):
             "Ekranın otomatik kapanmasını engelle"
         )
 
-        mouse_row = QWidget()
-        mouse_layout = QHBoxLayout(mouse_row)
-        mouse_layout.setContentsMargins(0, 0, 0, 0)
-        mouse_layout.setSpacing(6)
+        mouse_row = QHBoxLayout()
+        mouse_row.setContentsMargins(0, 0, 0, 0)
         self.mouse_input_cb = QCheckBox(
-            "Idle eşiğinde fareyi 1 px sağa/sola hareket ettir (Nudge)"
+            "Idle eşiğine gelince fareyi 1 px sağa/sola hareket ettir"
         )
-        mouse_badge = make_info_badge(
-            "Mouse input yalnızca idle eşiğine ulaşıldığında 1 px sağa ve tekrar sola mikro hareket üretir.\n"
+        info_badge = QLabel("ⓘ")
+        info_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        info_badge.setStyleSheet("color: gray; font-size: 13px; font-weight: bold; padding-left: 4px;")
+        info_badge.setToolTip(
+            "Mouse input yalnızca idle eşiğine ulaşıldığında 1 px sağa ve "
+            "tekrar sola mikro hareket üretir.\n"
             "Bu sayede bilgisayarın kilitlenmesi veya uykuya dalması engellenir.\n"
             "Başarılı nudge sonrasında sistem belirlenen cooldown aralığında bekler."
         )
-        mouse_layout.addWidget(self.mouse_input_cb)
-        mouse_layout.addWidget(mouse_badge)
-        mouse_layout.addStretch()
+        mouse_row.addWidget(self.mouse_input_cb)
+        mouse_row.addWidget(info_badge)
+        mouse_row.addStretch()
 
         behavior_layout.addWidget(self.prevent_sleep_cb)
         behavior_layout.addWidget(self.display_cb)
-        behavior_layout.addWidget(mouse_row)
+        behavior_layout.addLayout(mouse_row)
 
         cooldown_form = QFormLayout()
 
@@ -409,30 +345,23 @@ class SettingsWindow(QMainWindow):
         self.cooldown_max_spin.setRange(0, 3600)
         self.cooldown_max_spin.setSuffix(" saniye")
 
-        lbl_cmin, spin_cmin = make_form_row(
+        cooldown_form.addRow(
             "Nudge sonrası min. cooldown:",
             self.cooldown_min_spin,
-            "Bir fare hareketinden sonra en az kaç saniye boyunca yeni bir hareket üretilmeyeceği.",
         )
-        lbl_cmax, spin_cmax = make_form_row(
+        cooldown_form.addRow(
             "Nudge sonrası maks. cooldown:",
             self.cooldown_max_spin,
-            "Bir fare hareketinden sonra en fazla kaç saniye boyunca yeni bir hareket üretilmeyeceği.",
         )
-        cooldown_form.addRow(lbl_cmin, spin_cmin)
-        cooldown_form.addRow(lbl_cmax, spin_cmax)
         behavior_layout.addLayout(cooldown_form)
 
-        # Uzun ezilen metin kaldırıldı; rozet ile hover bulutuna taşındı
         keepawake_layout.addWidget(behavior_box)
         keepawake_layout.addStretch()
 
         keepawake_scroll.setWidget(keepawake_page)
         self.tabs.addTab(keepawake_scroll, "KeepAwake (Uyanık Tutucu)")
 
-        # ==========================================
-        # --- SEKME 2: UpNow (Mola Takipçisi) ---
-        # ==========================================
+        # --- Sekme 2: UpNow (Mola Takipçisi) ---
         upnow_scroll = QScrollArea()
         upnow_scroll.setWidgetResizable(True)
         upnow_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -440,24 +369,12 @@ class SettingsWindow(QMainWindow):
 
         upnow_page = QWidget()
         upnow_layout = QVBoxLayout(upnow_page)
-        upnow_layout.setContentsMargins(6, 6, 10, 6)
-        upnow_layout.setSpacing(12)
 
         self.upnow_status_label = QLabel()
         self.upnow_status_label.setWordWrap(True)
-        self.upnow_status_label.setStyleSheet("""
-            QLabel {
-                font-size: 13px;
-                padding: 8px 12px;
-                border-radius: 6px;
-                background-color: rgba(148, 163, 184, 0.12);
-                color: #334155;
-            }
-        """)
         upnow_layout.addWidget(self.upnow_status_label)
 
-        # UpNow Ayarlar Grubu
-        upnow_box = QGroupBox("Mola & Ayakta Kalma Yapılandırması")
+        upnow_box = QGroupBox("Mola & Ayakta Kalma Ayarları")
         upnow_form = QFormLayout(upnow_box)
 
         self.break_enabled_check = QCheckBox("UpNow mola takipçisini etkinleştir")
@@ -466,36 +383,20 @@ class SettingsWindow(QMainWindow):
         self.work_duration_spin = QSpinBox()
         self.work_duration_spin.setRange(1, 180)
         self.work_duration_spin.setSuffix(" dk")
-        lbl_work, spin_work = make_form_row(
-            "Çalışma süresi:",
-            self.work_duration_spin,
-            "Mola öncesi kesintisiz odaklanma çalışma süresi (varsayılan: 50 dakika).",
-        )
-        upnow_form.addRow(lbl_work, spin_work)
+        upnow_form.addRow("Çalışma süresi:", self.work_duration_spin)
 
         self.break_duration_spin = QSpinBox()
         self.break_duration_spin.setRange(1, 60)
         self.break_duration_spin.setSuffix(" dk")
-        lbl_break, spin_break = make_form_row(
-            "Mola süresi:",
-            self.break_duration_spin,
-            "Fiziksel mola süresi (varsayılan: 10 dakika). Bu sürede masadan kalkıp esnemeniz beklenir.",
-        )
-        upnow_form.addRow(lbl_break, spin_break)
+        upnow_form.addRow("Mola süresi:", self.break_duration_spin)
 
         self.break_alert_combo = QComboBox()
         self.break_alert_combo.addItem("Nazik Bildirim (Sistem)", "notification")
         self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
-        lbl_alert, combo_alert = make_form_row(
-            "Uyarı modu:",
-            self.break_alert_combo,
-            "Nazik Mod: Sistem bildirimi ve sesle uyarır.\nZorlayıcı Mod: Ekranda önde duran ve masadan kalkmanızı isteyen uyarı penceresi açar.",
-        )
-        upnow_form.addRow(lbl_alert, combo_alert)
+        upnow_form.addRow("Uyarı modu:", self.break_alert_combo)
 
         upnow_layout.addWidget(upnow_box)
 
-        # Hızlı Mola Aksiyonları
         actions_box = QGroupBox("Hızlı Mola Aksiyonları")
         actions_layout = QHBoxLayout(actions_box)
         self.tab_start_break_btn = QPushButton("Molayı Şimdi Başlat")
@@ -526,26 +427,6 @@ class SettingsWindow(QMainWindow):
         button_row.addWidget(self.hide_button)
 
         root.addLayout(button_row)
-
-        self.setStyleSheet("""
-            QToolTip {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 12px;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            }
-            QTabBar::tab {
-                padding: 8px 16px;
-                font-weight: 600;
-            }
-            QPushButton {
-                padding: 6px 14px;
-                border-radius: 5px;
-            }
-        """)
 
         self.load_from_config()
 
@@ -662,18 +543,14 @@ class SettingsWindow(QMainWindow):
         )
 
     def refresh_status(self):
-        if self.controller.config.enabled:
-            self.status_label.setText(self.controller.status_text())
-        else:
-            self.status_label.setText("⚪ KeepAwake devre dışı")
-
+        self.status_label.setText(self.controller.status_text())
         if hasattr(self, "upnow_status_label"):
             if self.controller.config.break_reminder_enabled:
                 from datetime import datetime
                 tracker_status = self.controller.break_tracker.status_text(datetime.now())
-                self.upnow_status_label.setText(f"🟢 UpNow aktif · {tracker_status}")
+                self.upnow_status_label.setText(f"UpNow Durumu: {tracker_status}")
             else:
-                self.upnow_status_label.setText("⚪ UpNow devre dışı")
+                self.upnow_status_label.setText("UpNow Mola Takipçisi şu anda devre dışı.")
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.
@@ -1007,8 +884,6 @@ class KeepAwakeController(QObject):
         idle = get_idle_seconds() if idle is None else idle
 
         if not self.config.enabled:
-            if self.config.break_reminder_enabled or self.break_tracker.state != BreakState.DISABLED:
-                return f"⚪ KeepAwake devre dışı · {self.break_tracker.status_text(now)}"
             return "⚪ Devre dışı"
 
         if self.is_paused(now):
