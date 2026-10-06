@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication
 
-from core import AppConfig, BreakState, BreakTracker
+from core import BreakState, BreakTracker
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,5 @@
 import sys
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -8,7 +7,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton
 
-from core import APP_NAME, AppConfig, BreakState
+from core import BreakState
 
 
 @pytest.fixture(scope="module")

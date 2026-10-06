@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 import json
-import pytest
 
 from core import AppConfig, BreakState, BreakTracker, ConfigStore
 

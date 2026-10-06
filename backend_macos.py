@@ -8,8 +8,6 @@ from pathlib import Path
 import ctypes
 from ctypes import c_double, c_uint32, c_void_p, Structure
 
-from core import APP_NAME
-
 # LaunchAgents yapılandırması
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 PLIST_LABEL = "com.menesdeniz.keepawake"
