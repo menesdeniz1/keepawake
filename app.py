@@ -993,29 +993,25 @@ class KeepAwakeController(QObject):
         if not is_inside_schedule(self.config, now):
             return "⚪ Program dışı saat"
 
-        parts = ["🟢 Program aktif"]
-
-        if self.config.prevent_sleep or self.config.keep_display_on:
-            if not self.execution_state_active:
-                parts.append("keep-awake uygulanamadı")
+        parts = []
 
         if self.config.simulate_mouse_input:
             threshold = self.config.idle_minutes * 60
 
             if not self.break_tracker.is_nudge_allowed():
-                parts.append("mouse nudge duraklatıldı (mola)")
+                parts.append("Mouse nudge duraklatıldı (mola)")
             elif self.cooldown_active(now):
                 remaining_cd = (self.cooldown_until - now).total_seconds()
                 parts.append(
-                    f"cooldown {format_duration(remaining_cd)}"
+                    f"Cooldown {format_duration(remaining_cd)}"
                 )
             elif idle < threshold:
                 remaining = threshold - idle
                 parts.append(
-                    f"mouse nudge {format_duration(remaining)} sonra"
+                    f"Mouse nudge {format_duration(remaining)} sonra"
                 )
             else:
-                parts.append("mouse nudge bekleniyor")
+                parts.append("Mouse nudge bekleniyor")
 
             if self.last_nudge_at is not None:
                 result = "başarılı" if self.last_nudge_ok else "başarısız"
@@ -1027,8 +1023,14 @@ class KeepAwakeController(QObject):
                 parts.append(
                     f"son cooldown {self.last_cooldown_seconds:.1f} sn"
                 )
+        else:
+            parts.append("Aktif")
 
-        return " · ".join(parts)
+        if self.config.prevent_sleep or self.config.keep_display_on:
+            if not self.execution_state_active:
+                parts.append("keep-awake uygulanamadı")
+
+        return f"🟢 {' · '.join(parts)}"
 
     def status_text(
         self,
