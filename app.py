@@ -1294,14 +1294,11 @@ class KeepAwakeController(QObject):
 
         title = "UpNow - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
-        snooze_min = getattr(self.config, "break_snooze_minutes", 5)
         self.show_system_notification(
             title,
             msg,
             QSystemTrayIcon.MessageIcon.Information,
-            snooze_text=f"{snooze_min} Dk Ertele",
-            on_snooze=lambda m: self.extend_break(m),
-            show_snooze=True,
+            show_snooze=False,
         )
 
     def trigger_break_alert(self):

@@ -433,20 +433,15 @@ def test_toast_snooze_actions_extend_work_and_break(controller):
 
     controller.toast_notification.hide()
 
-    # 2. Moladan çalışmaya geçerken (Break finished) -> Ertele deyince mola uzasın
+    # 2. Mola bitince (Break finished) -> Sadece Tamam çıksın, ertele olmasın
     controller.notify_break_finished()
     assert controller.toast_notification.isVisible()
-    assert controller.toast_notification.snooze_btn.isVisible()
-    assert "5 Dk Ertele" in controller.toast_notification.snooze_btn.text()
-
-    controller.toast_notification.snooze_btn.click()
-    # Break state restored and extended, nudge locked
-    assert controller.break_tracker.state == BreakState.ON_BREAK
-    assert controller.break_tracker.is_nudge_allowed() is False
-    # Toast switched to feedback (without snooze button)
-    assert "Mola Uzatıldı" in controller.toast_notification.title_label.text()
+    assert "Mola Tamamlandı" in controller.toast_notification.title_label.text()
     assert not controller.toast_notification.snooze_btn.isVisible()
+    assert controller.toast_notification.dismiss_btn.isVisible()
+    assert controller.toast_notification.dismiss_btn.text() == "Tamam"
 
-    controller.toast_notification.hide()
+    controller.toast_notification.dismiss_btn.click()
+    assert not controller.toast_notification.isVisible()
 
 
