@@ -207,3 +207,61 @@ def test_controller_keepawake_status_text_no_redundant_keepawake_ack(controller)
     assert "keep-awake uygulanamadı" in ka_status_failed
 
 
+def test_controller_show_system_notification(controller, monkeypatch):
+    platform_calls = []
+    tray_calls = []
+
+    monkeypatch.setattr(
+        "app.show_platform_notification",
+        lambda title, msg: platform_calls.append((title, msg)),
+    )
+    monkeypatch.setattr(
+        controller.tray,
+        "showMessage",
+        lambda title, msg, icon, timeout: tray_calls.append((title, msg)),
+    )
+
+    controller.show_system_notification("Test Title", "Test Message")
+    assert platform_calls == [("Test Title", "Test Message")]
+    assert tray_calls == [("Test Title", "Test Message")]
+
+
+def test_controller_break_start_and_finish_transitions_trigger_notifications(controller, monkeypatch):
+    controller.config.enabled = True
+    controller.config.break_reminder_enabled = True
+    controller.config.work_duration_minutes = 50
+    controller.config.break_duration_minutes = 10
+    controller.apply_config()
+
+    start_calls = []
+    finish_calls = []
+    monkeypatch.setattr(controller, "notify_break_started", lambda: start_calls.append(True))
+    monkeypatch.setattr(controller, "notify_break_finished", lambda: finish_calls.append(True))
+
+    # 1. Initially WORKING
+    assert controller.break_tracker.state == BreakState.WORKING
+
+    # 2. Advance time past work duration -> triggers ON_BREAK transition
+    future_time = datetime.now() + timedelta(minutes=51)
+    monkeypatch.setattr("app.get_idle_seconds", lambda: 30.0)
+
+    with patch("app.datetime") as mock_dt:
+        mock_dt.now.return_value = future_time
+        controller.tick()
+
+    assert controller.break_tracker.state == BreakState.ON_BREAK
+    assert len(start_calls) == 1
+    assert len(finish_calls) == 0
+
+    # 3. Advance time past break duration -> triggers WORKING transition
+    end_break_time = future_time + timedelta(minutes=11)
+    with patch("app.datetime") as mock_dt:
+        mock_dt.now.return_value = end_break_time
+        controller.tick()
+
+    assert controller.break_tracker.state == BreakState.WORKING
+    assert len(start_calls) == 1
+    assert len(finish_calls) == 1
+
+
+

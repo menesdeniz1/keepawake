@@ -52,6 +52,7 @@ if sys.platform == "win32":
         nudge_mouse,
         set_execution_state,
         set_startup_enabled,
+        show_platform_notification,
     )
 elif sys.platform.startswith("linux"):
     from backend_linux import (
@@ -61,6 +62,7 @@ elif sys.platform.startswith("linux"):
         nudge_mouse,
         set_execution_state,
         set_startup_enabled,
+        show_platform_notification,
     )
 elif sys.platform == "darwin":
     from backend_macos import (
@@ -70,6 +72,7 @@ elif sys.platform == "darwin":
         nudge_mouse,
         set_execution_state,
         set_startup_enabled,
+        show_platform_notification,
     )
 else:
     print(f"KeepAwake, {sys.platform} platformunu desteklemiyor.")
@@ -849,6 +852,7 @@ class KeepAwakeController(QObject):
 
     def start_break_now(self):
         self.break_tracker.start_break_now()
+        self.notify_break_started()
         self.tick()
 
     def snooze_break(self, minutes: int | None = None):
@@ -860,6 +864,9 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
+        title = f"{APP_NAME} - Mola Ertelendi"
+        msg = f"Mola {minutes} dakika ertelendi."
+        self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
         self.tick()
 
     def start_work_now(self):
@@ -869,6 +876,7 @@ class KeepAwakeController(QObject):
             and self.nag_dialog.isVisible()
         ):
             self.nag_dialog.hide()
+        self.notify_break_finished()
         self.tick()
 
     def toggle_break_pause(self):
@@ -935,7 +943,15 @@ class KeepAwakeController(QObject):
         idle = get_idle_seconds()
         active = self.schedule_active(now)
 
+        prev_state = self.break_tracker.state
         self.break_tracker.tick(now, idle)
+        curr_state = self.break_tracker.state
+
+        if prev_state == BreakState.WORKING and curr_state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+            self.notify_break_started()
+        elif prev_state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION) and curr_state == BreakState.WORKING:
+            self.notify_break_finished()
+
         if self.break_tracker.should_alert(now):
             self.trigger_break_alert()
             self.break_tracker.record_alert(now)
@@ -1002,9 +1018,30 @@ class KeepAwakeController(QObject):
         if self.window is not None:
             self.window.refresh_status()
 
-    def trigger_break_alert(self):
+    def show_system_notification(
+        self,
+        title: str,
+        message: str,
+        icon: QSystemTrayIcon.MessageIcon = QSystemTrayIcon.MessageIcon.Information,
+    ):
+        # 1. Native platform notification (e.g. macOS osascript, Linux notify-send)
+        try:
+            show_platform_notification(title, message)
+        except Exception:
+            pass
+
+        # 2. Qt tray notification (standard on Windows and Qt-supported tray integrations)
+        if hasattr(self, "tray") and self.tray is not None:
+            try:
+                self.tray.showMessage(title, message, icon, 5000)
+            except Exception:
+                pass
+
+    def notify_break_started(self):
+        duration = self.config.break_duration_minutes
         title = f"{APP_NAME} - Mola Zamanı"
-        msg = "Mola zamanı! Lütfen masadan kalkın ve hareket edin."
+        msg = f"Mola başladı! Lütfen masadan kalkın ve dinlenin ({duration} dk)."
+
         if self.config.break_alert_mode == "nagging":
             if getattr(self, "nag_dialog", None) is not None:
                 rem = self.break_tracker.remaining_seconds()
@@ -1014,13 +1051,35 @@ class KeepAwakeController(QObject):
                 self.nag_dialog.raise_()
                 self.nag_dialog.activateWindow()
         else:
-            if hasattr(self, "tray") and self.tray is not None:
-                self.tray.showMessage(
-                    title,
-                    msg,
-                    QSystemTrayIcon.MessageIcon.Warning,
-                    5000,
-                )
+            self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
+
+    def notify_break_finished(self):
+        if getattr(self, "nag_dialog", None) is not None and self.nag_dialog.isVisible():
+            self.nag_dialog.hide()
+
+        title = f"{APP_NAME} - Mola Tamamlandı"
+        msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
+        self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
+
+    def trigger_break_alert(self):
+        rem = self.break_tracker.remaining_seconds()
+        minutes, seconds = divmod(rem, 60)
+        time_str = f"{minutes:02d}:{seconds:02d}"
+
+        if self.config.break_alert_mode == "nagging":
+            if getattr(self, "nag_dialog", None) is not None:
+                self.nag_dialog.update_status(time_str)
+                self.nag_dialog.show()
+                self.nag_dialog.raise_()
+                self.nag_dialog.activateWindow()
+        else:
+            title = f"{APP_NAME} - Mola İhlali"
+            msg = f"Lütfen masadan uzaklaşın! Mola bitimine {time_str} kaldı."
+            self.show_system_notification(
+                title,
+                msg,
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
 
     def keepawake_status_text(
         self,

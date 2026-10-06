@@ -193,3 +193,26 @@ def set_startup_enabled(enabled: bool) -> None:
     }
     with PLIST_FILE.open("wb") as f:
         plistlib.dump(data, f)
+
+
+def show_platform_notification(title: str, message: str) -> bool:
+    """macOS üzerinde osascript kullanarak yerel sistem bildirimi gönderir."""
+    try:
+        proc = subprocess.run(
+            [
+                "osascript",
+                "-e",
+                'on run argv\n'
+                '  display notification (item 2 of argv) with title (item 1 of argv) sound name "Glass"\n'
+                'end run',
+                title,
+                message,
+            ],
+            check=False,
+            capture_output=True,
+            timeout=5,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+

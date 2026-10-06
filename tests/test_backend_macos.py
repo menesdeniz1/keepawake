@@ -128,3 +128,22 @@ def test_macos_autostart_plist(tmp_path, monkeypatch):
     backend_macos.set_startup_enabled(False)
     assert backend_macos.is_startup_enabled() is False
     assert not test_plist.exists()
+
+
+def test_macos_show_platform_notification(monkeypatch):
+    import backend_macos
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(backend_macos.subprocess, "run", fake_run)
+    res = backend_macos.show_platform_notification("Test Title", "Test Message")
+    assert res is True
+    assert len(calls) == 1
+    assert calls[0][0] == "osascript"
+    assert "Test Title" in calls[0]
+    assert "Test Message" in calls[0]
+

@@ -349,14 +349,17 @@ def test_trigger_break_alert_modes(controller, monkeypatch):
     assert controller.nag_dialog.isVisible()
     controller.nag_dialog.hide()
 
-    # Mode: notification -> calls tray.showMessage
+    # Mode: notification -> calls show_platform_notification and tray.showMessage
     controller.config.break_alert_mode = "notification"
     show_message_spy = MagicMock()
+    platform_spy = MagicMock()
     monkeypatch.setattr(controller.tray, "showMessage", show_message_spy)
+    monkeypatch.setattr("app.show_platform_notification", platform_spy)
 
     controller.trigger_break_alert()
     assert not controller.nag_dialog.isVisible()
     show_message_spy.assert_called_once()
+    platform_spy.assert_called_once()
 
 
 def test_tick_updates_nag_dialog(controller):
