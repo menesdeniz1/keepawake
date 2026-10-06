@@ -31,6 +31,8 @@ from core import (
     APP_VERSION,
     DAY_KEYS,
     DAY_LABELS_TR,
+    BreakState,
+    BreakTracker,
     ConfigStore,
     format_duration,
     is_inside_schedule,
@@ -48,6 +50,15 @@ if sys.platform == "win32":
     )
 elif sys.platform.startswith("linux"):
     from backend_linux import (
+        clear_execution_state,
+        get_idle_seconds,
+        is_startup_enabled,
+        nudge_mouse,
+        set_execution_state,
+        set_startup_enabled,
+    )
+elif sys.platform == "darwin":
+    from backend_macos import (
         clear_execution_state,
         get_idle_seconds,
         is_startup_enabled,
@@ -341,6 +352,7 @@ class KeepAwakeController(QObject):
         self.app = app
         self.store = ConfigStore()
         self.config = self.store.load()
+        self.break_tracker = BreakTracker(self.config)
         self.paused_until: datetime | None = None
         self.execution_state_active = False
         self.last_nudge_at: datetime | None = None
@@ -438,6 +450,7 @@ class KeepAwakeController(QObject):
             self.enable_action.setChecked(self.config.enabled)
             self.enable_action.blockSignals(False)
 
+        self.break_tracker.update_config(self.config)
         self.tick()
 
     def set_enabled_from_tray(self, checked: bool):
@@ -505,6 +518,11 @@ class KeepAwakeController(QObject):
         idle = get_idle_seconds()
         active = self.schedule_active(now)
 
+        self.break_tracker.tick(now, idle)
+        if self.break_tracker.should_alert(now):
+            self.trigger_break_alert()
+            self.break_tracker.record_alert(now)
+
         # Orijinal betiğe daha sadık davranış:
         # Güç/ekran keep-awake seçildiyse çalışma programı aktif olduğu sürece
         # işletim sistemine sürekli olarak bu isteği bildir.
@@ -526,10 +544,12 @@ class KeepAwakeController(QObject):
         # Mouse hareketi ise yalnızca kullanıcı belirlenen idle eşiğine
         # ulaştığında yapılır. Başarılı SendInput son kullanıcı input zamanını
         # yenilediği için bir sonraki nudge yeniden idle eşiği dolunca gelir.
+        # Mola esnasında ise nudge kilitlenir.
         if (
             active
             and self.config.simulate_mouse_input
             and not self.cooldown_active(now)
+            and self.break_tracker.is_nudge_allowed()
             and idle >= self.config.idle_minutes * 60
         ):
             self.last_nudge_ok = nudge_mouse()
@@ -545,6 +565,22 @@ class KeepAwakeController(QObject):
 
         if self.window is not None:
             self.window.refresh_status()
+
+    def trigger_break_alert(self):
+        title = f"{APP_NAME} - Mola İhlali"
+        msg = "Mola zamanı! Lütfen masadan kalkın ve hareket edin."
+        if getattr(self, "nag_dialog", None) is not None and self.config.break_alert_mode == "nagging":
+            self.nag_dialog.show()
+            self.nag_dialog.raise_()
+            self.nag_dialog.activateWindow()
+        else:
+            if hasattr(self, "tray") and self.tray is not None:
+                self.tray.showMessage(
+                    title,
+                    msg,
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    5000,
+                )
 
     def status_text(
         self,
@@ -577,7 +613,9 @@ class KeepAwakeController(QObject):
         if self.config.simulate_mouse_input:
             threshold = self.config.idle_minutes * 60
 
-            if self.cooldown_active(now):
+            if not self.break_tracker.is_nudge_allowed():
+                parts.append("mouse nudge duraklatıldı (mola)")
+            elif self.cooldown_active(now):
                 remaining_cd = (self.cooldown_until - now).total_seconds()
                 parts.append(
                     f"cooldown {format_duration(remaining_cd)}"
@@ -600,6 +638,9 @@ class KeepAwakeController(QObject):
                 parts.append(
                     f"son cooldown {self.last_cooldown_seconds:.1f} sn"
                 )
+
+        if self.config.break_reminder_enabled or self.break_tracker.state != BreakState.DISABLED:
+            parts.append(self.break_tracker.status_text(now))
 
         return " · ".join(parts)
 
