@@ -129,7 +129,7 @@ class BreakNagDialog(QDialog):
         self.controller = controller
 
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-        self.setWindowTitle(f"{APP_NAME} - Mola Zamanı")
+        self.setWindowTitle(f"{APP_NAME} - Mola Vakti")
         self.setMinimumWidth(380)
 
         layout = QVBoxLayout(self)
@@ -227,8 +227,8 @@ class BreakNagDialog(QDialog):
         self.hide()
 
     def closeEvent(self, event):
+        # Zorlayıcı modda pencere X ile kapanmaz; kullanıcı Ertele veya Molayı Bitir butonuna basmalıdır.
         event.ignore()
-        self.hide()
 
 
 class BreakToastNotification(QDialog):
@@ -261,7 +261,7 @@ class BreakToastNotification(QDialog):
 
         # Üst satır: Başlık ve Kapatma Çarpısı
         top_row = QHBoxLayout()
-        self.title_label = QLabel("🔔 UpNow - Mola Zamanı", self)
+        self.title_label = QLabel("🔔 UpNow - Mola Vakti", self)
         self.title_label.setObjectName("toastTitle")
         t_font = self.title_label.font()
         t_font.setBold(True)
@@ -1196,8 +1196,8 @@ class KeepAwakeController(QObject):
 
     def notify_break_started(self):
         duration = self.config.break_duration_minutes
-        title = f"{APP_NAME} - Mola Zamanı"
-        msg = f"Mola başladı! Lütfen masadan kalkın ve dinlenin ({duration} dk)."
+        title = f"{APP_NAME} - Mola Vakti"
+        msg = f"Mola vakti! Lütfen masadan kalkın ve dinlenin ({duration} dk)."
 
         if self.config.break_alert_mode == "nagging":
             if getattr(self, "nag_dialog", None) is not None:
@@ -1221,24 +1221,17 @@ class KeepAwakeController(QObject):
         self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
 
     def trigger_break_alert(self):
-        rem = self.break_tracker.remaining_seconds()
-        minutes, seconds = divmod(rem, 60)
-        time_str = f"{minutes:02d}:{seconds:02d}"
-
+        # Yalnızca zorlayıcı (nagging) modda pencereyi öne getirir.
+        # Nazik modda mola başlangıcında bir kere kart çıkar ve kendiliğinden kapanır;
+        # mola süresince kullanıcıya ardışık ihlal bildirimi basılmaz.
         if self.config.break_alert_mode == "nagging":
             if getattr(self, "nag_dialog", None) is not None:
-                self.nag_dialog.update_status(time_str)
+                rem = self.break_tracker.remaining_seconds()
+                minutes, seconds = divmod(rem, 60)
+                self.nag_dialog.update_status(f"{minutes:02d}:{seconds:02d}")
                 self.nag_dialog.show()
                 self.nag_dialog.raise_()
                 self.nag_dialog.activateWindow()
-        else:
-            title = f"{APP_NAME} - Mola İhlali"
-            msg = f"Lütfen masadan uzaklaşın! Mola bitimine {time_str} kaldı."
-            self.show_system_notification(
-                title,
-                msg,
-                QSystemTrayIcon.MessageIcon.Warning,
-            )
 
     def keepawake_status_text(
         self,

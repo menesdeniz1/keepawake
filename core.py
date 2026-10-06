@@ -197,9 +197,7 @@ class BreakTracker:
         else:
             minutes, seconds = divmod(rem, 60)
             time_str = f"{minutes:02d}:{seconds:02d}"
-            if self.state == BreakState.BREAK_VIOLATION:
-                return f"Mola İhlali: {time_str} kaldı (Masadan Kalk!)"
-            return f"Mola: {time_str} kaldı (Masadan Kalk!)"
+            return f"Mola Vakti: {time_str} kaldı (Masadan Kalk!)"
 
     def update_config(self, config: AppConfig, now: datetime | None = None) -> None:
         current = now or datetime.now()

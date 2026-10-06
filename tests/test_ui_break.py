@@ -55,7 +55,7 @@ def test_break_nag_dialog_properties(controller):
         assert isinstance(dialog, QDialog)
         flags = dialog.windowFlags()
         assert bool(flags & Qt.WindowType.WindowStaysOnTopHint)
-        assert f"{APP_NAME} - Mola Zamanı" in dialog.windowTitle()
+        assert f"{APP_NAME} - Mola Vakti" in dialog.windowTitle()
         assert "Lütfen Masadan Uzaklaşın!" in dialog.headline_label.text()
         assert hasattr(dialog, "countdown_label")
 
@@ -340,7 +340,7 @@ def test_controller_break_action_triggers(controller, monkeypatch):
 
 
 def test_trigger_break_alert_modes(controller, monkeypatch):
-    # Mode: nagging -> shows nag_dialog
+    # Mode: nagging -> shows/raises nag_dialog
     controller.config.break_alert_mode = "nagging"
     controller.nag_dialog.hide()
     assert not controller.nag_dialog.isVisible()
@@ -349,17 +349,12 @@ def test_trigger_break_alert_modes(controller, monkeypatch):
     assert controller.nag_dialog.isVisible()
     controller.nag_dialog.hide()
 
-    # Mode: notification -> calls show_platform_notification and tray.showMessage
+    # Mode: notification -> Nazik mod: violation triggers do NOT spam toasts during break
     controller.config.break_alert_mode = "notification"
-    show_message_spy = MagicMock()
-    platform_spy = MagicMock()
-    monkeypatch.setattr(controller.tray, "showMessage", show_message_spy)
-    monkeypatch.setattr("app.show_platform_notification", platform_spy)
-
+    controller.toast_notification.hide()
     controller.trigger_break_alert()
     assert not controller.nag_dialog.isVisible()
-    show_message_spy.assert_called_once()
-    platform_spy.assert_called_once()
+    assert not controller.toast_notification.isVisible()
 
 
 def test_tick_updates_nag_dialog(controller):
@@ -403,14 +398,15 @@ def test_break_toast_notification_properties(controller):
     assert not toast.isVisible()
 
 
-def test_notification_mode_shows_toast_on_alert(controller):
+def test_notification_mode_shows_toast_on_break_started(controller):
     controller.config.break_alert_mode = "notification"
     controller.toast_notification.hide()
     assert not controller.toast_notification.isVisible()
 
-    controller.trigger_break_alert()
+    controller.notify_break_started()
     assert controller.toast_notification.isVisible()
-    assert "Mola İhlali" in controller.toast_notification.title_label.text()
+    assert "Mola Vakti" in controller.toast_notification.title_label.text()
+    assert "Mola İhlali" not in controller.toast_notification.title_label.text()
     controller.toast_notification.hide()
 
 

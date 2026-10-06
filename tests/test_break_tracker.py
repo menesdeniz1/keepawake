@@ -163,7 +163,7 @@ def test_break_tracker_status_text():
     # In break
     break_time = start_time + timedelta(minutes=50, seconds=1)
     tracker.tick(now=break_time, idle_seconds=30.0)
-    assert "Mola: 10:00 kaldı (Masadan Kalk!)" in tracker.status_text(now=break_time)
+    assert "Mola Vakti: 10:00 kaldı (Masadan Kalk!)" in tracker.status_text(now=break_time)
 
     # Violation
     tracker.tick(now=break_time + timedelta(seconds=10), idle_seconds=2.0)
