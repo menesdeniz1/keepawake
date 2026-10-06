@@ -1154,6 +1154,10 @@ class KeepAwakeController(QObject):
         self.status_action.triggered.connect(self.show_settings)
         self.menu.addAction(self.status_action)
 
+        self.update_action = QAction("Güncellemeleri Kontrol Et", self.menu)
+        self.update_action.triggered.connect(self.check_for_updates_manual)
+        self.menu.addAction(self.update_action)
+
         self.menu.addSeparator()
 
         self.enable_action = QAction("KeepAwake", self.menu)
@@ -1162,17 +1166,17 @@ class KeepAwakeController(QObject):
         self.enable_action.toggled.connect(self.set_enabled_from_tray)
         self.menu.addAction(self.enable_action)
 
-        self.pause_15 = QAction("15 Dakika Duraklat", self.menu)
-        self.pause_15.triggered.connect(lambda: self.pause_for(15))
-        self.menu.addAction(self.pause_15)
+        self.pause_15_action = QAction("15 Dakika Duraklat", self.menu)
+        self.pause_15_action.triggered.connect(lambda: self.pause_for(15))
+        self.menu.addAction(self.pause_15_action)
 
-        self.pause_60 = QAction("1 Saat Duraklat", self.menu)
-        self.pause_60.triggered.connect(lambda: self.pause_for(60))
-        self.menu.addAction(self.pause_60)
+        self.pause_60_action = QAction("1 Saat Duraklat", self.menu)
+        self.pause_60_action.triggered.connect(lambda: self.pause_for(60))
+        self.menu.addAction(self.pause_60_action)
 
-        self.pause_today = QAction("Bugün İçin Duraklat", self.menu)
-        self.pause_today.triggered.connect(self.pause_until_tomorrow)
-        self.menu.addAction(self.pause_today)
+        self.pause_today_action = QAction("Bugün İçin Duraklat", self.menu)
+        self.pause_today_action.triggered.connect(self.pause_until_tomorrow)
+        self.menu.addAction(self.pause_today_action)
 
         self.resume_action = QAction("Duraklatmayı İptal Et", self.menu)
         self.resume_action.triggered.connect(self.resume_now)
@@ -1200,10 +1204,6 @@ class KeepAwakeController(QObject):
         self.menu.addAction(self.toggle_break_pause_action)
 
         self.menu.addSeparator()
-
-        self.update_action = QAction("Güncellemeleri Kontrol Et", self.menu)
-        self.update_action.triggered.connect(self.check_for_updates_manual)
-        self.menu.addAction(self.update_action)
 
         self.exit_action = QAction("Uygulamadan Çık", self.menu)
         self.exit_action.triggered.connect(self.quit)
