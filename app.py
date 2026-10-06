@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QStyle,
     QSystemTrayIcon,
@@ -222,29 +223,96 @@ class BreakNagDialog(QDialog):
         self.hide()
 
 
+def make_info_badge(tooltip_text: str) -> QLabel:
+    badge = QLabel("ⓘ")
+    badge.setCursor(Qt.CursorShape.PointingHandCursor)
+    badge.setToolTip(tooltip_text)
+    badge.setStyleSheet("""
+        QLabel {
+            color: #3b82f6;
+            font-size: 13px;
+            font-weight: bold;
+            padding: 1px 5px;
+            border-radius: 8px;
+            background-color: rgba(59, 130, 246, 0.12);
+        }
+        QLabel:hover {
+            color: #60a5fa;
+            background-color: rgba(59, 130, 246, 0.28);
+        }
+    """)
+    return badge
+
+
+def make_form_row(label_text: str, widget: QWidget, tooltip_text: str | None = None) -> tuple[QWidget, QWidget]:
+    if not tooltip_text:
+        return QLabel(label_text), widget
+
+    container = QWidget()
+    row = QHBoxLayout(container)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(4)
+    lbl = QLabel(label_text)
+    badge = make_info_badge(tooltip_text)
+    row.addWidget(lbl)
+    row.addWidget(badge)
+    row.addStretch()
+    return container, widget
+
+
 class SettingsWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
-        self.setMinimumWidth(540)
+        self.setMinimumWidth(560)
+        self.setMinimumHeight(520)
 
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(10)
 
         self.tabs = QTabWidget()
 
-        # --- Sekme 1: KeepAwake (Uyanık Tutucu) ---
+        # ==========================================
+        # --- SEKME 1: KeepAwake (Uyanık Tutucu) ---
+        # ==========================================
+        keepawake_scroll = QScrollArea()
+        keepawake_scroll.setWidgetResizable(True)
+        keepawake_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
         keepawake_page = QWidget()
         keepawake_layout = QVBoxLayout(keepawake_page)
+        keepawake_layout.setContentsMargins(10, 10, 10, 10)
+        keepawake_layout.setSpacing(12)
+
+        # KeepAwake Status Card (Tutarlı Üst Panel)
+        ka_status_card = QGroupBox("KeepAwake Durumu")
+        ka_status_card.setStyleSheet("QGroupBox { font-weight: bold; }")
+        ka_status_layout = QVBoxLayout(ka_status_card)
+        ka_status_layout.setSpacing(6)
+
+        ka_header = QHBoxLayout()
+        ka_title = QLabel("Çalışma Durumu:")
+        ka_title.setStyleSheet("font-weight: 500;")
+        self.ka_badge = QLabel("🟢 ETKİN")
+        self.ka_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(34, 197, 94, 0.15); color: #22c55e;")
+        ka_header.addWidget(ka_title)
+        ka_header.addWidget(self.ka_badge)
+        ka_header.addStretch()
+        ka_status_layout.addLayout(ka_header)
 
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        keepawake_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("padding: 4px 0; color: #475569;")
+        ka_status_layout.addWidget(self.status_label)
+        keepawake_layout.addWidget(ka_status_card)
 
-        general_box = QGroupBox("Genel")
+        # Genel Grubu
+        general_box = QGroupBox("Genel Yapılandırma")
         general_form = QFormLayout(general_box)
 
         self.enabled_cb = QCheckBox("KeepAwake etkin")
@@ -259,16 +327,27 @@ class SettingsWindow(QMainWindow):
         self.idle_spin = QSpinBox()
         self.idle_spin.setRange(1, 240)
         self.idle_spin.setSuffix(" dakika")
-        general_form.addRow("Idle eşiği:", self.idle_spin)
+        lbl_idle, spin_idle = make_form_row(
+            "Idle eşiği:",
+            self.idle_spin,
+            "Kullanıcı bu süre boyunca klavye veya fareye dokunmazsa bilgisayar boşta (idle) kabul edilir."
+        )
+        general_form.addRow(lbl_idle, spin_idle)
 
         self.check_spin = QSpinBox()
         self.check_spin.setRange(1, 60)
         self.check_spin.setSuffix(" saniye")
-        general_form.addRow("Kontrol sıklığı:", self.check_spin)
+        lbl_check, spin_check = make_form_row(
+            "Kontrol sıklığı:",
+            self.check_spin,
+            "Zamanlayıcı ve boşta kalma kontrollerinin kaç saniyede bir tekrarlanacağı."
+        )
+        general_form.addRow(lbl_check, spin_check)
 
         keepawake_layout.addWidget(general_box)
 
-        schedule_box = QGroupBox("Çalışma programı")
+        # Çalışma Programı Grubu
+        schedule_box = QGroupBox("Çalışma Programı")
         schedule_layout = QVBoxLayout(schedule_box)
 
         day_row = QHBoxLayout()
@@ -290,13 +369,14 @@ class SettingsWindow(QMainWindow):
         self.end_edit = QTimeEdit()
         self.end_edit.setDisplayFormat("HH:mm")
 
-        time_form.addRow("Başlangıç:", self.start_edit)
-        time_form.addRow("Bitiş:", self.end_edit)
+        time_form.addRow("Mesai Başlangıç:", self.start_edit)
+        time_form.addRow("Mesai Bitiş:", self.end_edit)
         schedule_layout.addLayout(time_form)
 
         keepawake_layout.addWidget(schedule_box)
 
-        behavior_box = QGroupBox("Güç davranışı")
+        # Güç Davranışı Grubu
+        behavior_box = QGroupBox("Güç ve Simülasyon Davranışı")
         behavior_layout = QVBoxLayout(behavior_box)
 
         self.prevent_sleep_cb = QCheckBox(
@@ -305,13 +385,26 @@ class SettingsWindow(QMainWindow):
         self.display_cb = QCheckBox(
             "Ekranın otomatik kapanmasını engelle"
         )
+
+        mouse_row = QWidget()
+        mouse_layout = QHBoxLayout(mouse_row)
+        mouse_layout.setContentsMargins(0, 0, 0, 0)
+        mouse_layout.setSpacing(6)
         self.mouse_input_cb = QCheckBox(
-            "Idle eşiğine gelince fareyi 1 px sağa/sola hareket ettir"
+            "Idle eşiğinde fareyi 1 px sağa/sola hareket ettir (Nudge)"
         )
+        mouse_badge = make_info_badge(
+            "Mouse input yalnızca idle eşiğine ulaşıldığında 1 px sağa ve tekrar sola mikro hareket üretir.\n"
+            "Bu sayede bilgisayarın kilitlenmesi veya uykuya dalması engellenir.\n"
+            "Başarılı nudge sonrasında sistem belirlenen cooldown aralığında bekler."
+        )
+        mouse_layout.addWidget(self.mouse_input_cb)
+        mouse_layout.addWidget(mouse_badge)
+        mouse_layout.addStretch()
 
         behavior_layout.addWidget(self.prevent_sleep_cb)
         behavior_layout.addWidget(self.display_cb)
-        behavior_layout.addWidget(self.mouse_input_cb)
+        behavior_layout.addWidget(mouse_row)
 
         cooldown_form = QFormLayout()
 
@@ -323,41 +416,62 @@ class SettingsWindow(QMainWindow):
         self.cooldown_max_spin.setRange(0, 3600)
         self.cooldown_max_spin.setSuffix(" saniye")
 
-        cooldown_form.addRow(
+        lbl_cmin, spin_cmin = make_form_row(
             "Nudge sonrası min. cooldown:",
             self.cooldown_min_spin,
+            "Bir fare hareketinden sonra en az kaç saniye boyunca yeni bir hareket üretilmeyeceği."
         )
-        cooldown_form.addRow(
+        lbl_cmax, spin_cmax = make_form_row(
             "Nudge sonrası maks. cooldown:",
             self.cooldown_max_spin,
+            "Bir fare hareketinden sonra en fazla kaç saniye boyunca yeni bir hareket üretilmeyeceği."
         )
+        cooldown_form.addRow(lbl_cmin, spin_cmin)
+        cooldown_form.addRow(lbl_cmax, spin_cmax)
         behavior_layout.addLayout(cooldown_form)
-
-        note = QLabel(
-            "Mouse input yalnızca idle eşiğine ulaşıldığında 1 px sağa ve "
-            "tekrar sola hareket üretir. Başarılı nudge sonrasında program, "
-            "belirlediğiniz minimum ve maksimum değerler arasında rastgele "
-            "bir cooldown süresi seçer."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: gray;")
-        behavior_layout.addWidget(note)
 
         keepawake_layout.addWidget(behavior_box)
         keepawake_layout.addStretch()
 
-        self.tabs.addTab(keepawake_page, "KeepAwake (Uyanık Tutucu)")
+        keepawake_scroll.setWidget(keepawake_page)
+        self.tabs.addTab(keepawake_scroll, "KeepAwake (Uyanık Tutucu)")
 
-        # --- Sekme 2: UpNow (Mola Takipçisi) ---
+        # ==========================================
+        # --- SEKME 2: UpNow (Mola Takipçisi) ---
+        # ==========================================
+        upnow_scroll = QScrollArea()
+        upnow_scroll.setWidgetResizable(True)
+        upnow_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
         upnow_page = QWidget()
         upnow_layout = QVBoxLayout(upnow_page)
+        upnow_layout.setContentsMargins(10, 10, 10, 10)
+        upnow_layout.setSpacing(12)
+
+        # UpNow Status Card (KeepAwake ile Birebir Aynı Tasarım)
+        upnow_status_card = QGroupBox("UpNow Durumu")
+        upnow_status_card.setStyleSheet("QGroupBox { font-weight: bold; }")
+        upnow_status_layout = QVBoxLayout(upnow_status_card)
+        upnow_status_layout.setSpacing(6)
+
+        upnow_header = QHBoxLayout()
+        upnow_title = QLabel("Çalışma Durumu:")
+        upnow_title.setStyleSheet("font-weight: 500;")
+        self.upnow_badge = QLabel("⚪ DEVRE DIŞI")
+        self.upnow_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.15); color: #94a3b8;")
+        upnow_header.addWidget(upnow_title)
+        upnow_header.addWidget(self.upnow_badge)
+        upnow_header.addStretch()
+        upnow_status_layout.addLayout(upnow_header)
 
         self.upnow_status_label = QLabel()
         self.upnow_status_label.setWordWrap(True)
-        self.upnow_status_label.setStyleSheet("font-weight: bold; padding: 6px; background-color: #2b2d42; color: #edf2f4; border-radius: 6px;")
-        upnow_layout.addWidget(self.upnow_status_label)
+        self.upnow_status_label.setStyleSheet("padding: 4px 0; color: #475569;")
+        upnow_status_layout.addWidget(self.upnow_status_label)
+        upnow_layout.addWidget(upnow_status_card)
 
-        upnow_box = QGroupBox("Mola & Ayakta Kalma Ayarları")
+        # UpNow Ayarlar Grubu
+        upnow_box = QGroupBox("Mola & Ayakta Kalma Yapılandırması")
         upnow_form = QFormLayout(upnow_box)
 
         self.break_enabled_check = QCheckBox("UpNow mola takipçisini etkinleştir")
@@ -366,21 +480,37 @@ class SettingsWindow(QMainWindow):
         self.work_duration_spin = QSpinBox()
         self.work_duration_spin.setRange(1, 180)
         self.work_duration_spin.setSuffix(" dk")
-        upnow_form.addRow("Çalışma süresi:", self.work_duration_spin)
+        lbl_work, spin_work = make_form_row(
+            "Çalışma süresi:",
+            self.work_duration_spin,
+            "Mola öncesi kesintisiz odaklanma çalışma süresi (varsayılan: 50 dakika)."
+        )
+        upnow_form.addRow(lbl_work, spin_work)
 
         self.break_duration_spin = QSpinBox()
         self.break_duration_spin.setRange(1, 60)
         self.break_duration_spin.setSuffix(" dk")
-        upnow_form.addRow("Mola süresi:", self.break_duration_spin)
+        lbl_break, spin_break = make_form_row(
+            "Mola süresi:",
+            self.break_duration_spin,
+            "Fiziksel mola süresi (varsayılan: 10 dakika). Bu sürede masadan kalkıp esnemeniz beklenir."
+        )
+        upnow_form.addRow(lbl_break, spin_break)
 
         self.break_alert_combo = QComboBox()
         self.break_alert_combo.addItem("Nazik Bildirim (Sistem)", "notification")
         self.break_alert_combo.addItem("Zorlayıcı Mod (Uyarı Penceresi)", "nagging")
-        upnow_form.addRow("Uyarı modu:", self.break_alert_combo)
+        lbl_alert, combo_alert = make_form_row(
+            "Uyarı modu:",
+            self.break_alert_combo,
+            "Nazik Mod: Sistem bildirimi ve sesle uyarır.\nZorlayıcı Mod: Ekranda önde duran ve masadan kalkmanızı isteyen uyarı penceresi açar."
+        )
+        upnow_form.addRow(lbl_alert, combo_alert)
 
         upnow_layout.addWidget(upnow_box)
 
-        actions_box = QGroupBox("Hızlı Mola Aksiyonları")
+        # Hızlı Aksiyonlar Grubu
+        actions_box = QGroupBox("Hızlı Mola Kontrolleri")
         actions_layout = QHBoxLayout(actions_box)
         self.tab_start_break_btn = QPushButton("Molayı Şimdi Başlat")
         self.tab_start_break_btn.clicked.connect(self.controller.start_break_now)
@@ -393,7 +523,8 @@ class SettingsWindow(QMainWindow):
         upnow_layout.addWidget(actions_box)
         upnow_layout.addStretch()
 
-        self.tabs.addTab(upnow_page, "UpNow (Mola Takipçisi)")
+        upnow_scroll.setWidget(upnow_page)
+        self.tabs.addTab(upnow_scroll, "UpNow (Mola Takipçisi)")
 
         root.addWidget(self.tabs)
 
@@ -409,6 +540,25 @@ class SettingsWindow(QMainWindow):
         button_row.addWidget(self.hide_button)
 
         root.addLayout(button_row)
+
+        self.setStyleSheet("""
+            QToolTip {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+            QTabBar::tab {
+                padding: 8px 16px;
+                font-weight: 600;
+            }
+            QPushButton {
+                padding: 6px 14px;
+                border-radius: 5px;
+            }
+        """)
 
         self.load_from_config()
 
@@ -526,13 +676,37 @@ class SettingsWindow(QMainWindow):
 
     def refresh_status(self):
         self.status_label.setText(self.controller.status_text())
+
+        if hasattr(self, "ka_badge"):
+            if self.controller.config.enabled:
+                self.ka_badge.setText("🟢 ETKİN")
+                self.ka_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(34, 197, 94, 0.15); color: #22c55e;")
+            else:
+                self.ka_badge.setText("⚪ DEVRE DIŞI")
+                self.ka_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.15); color: #94a3b8;")
+
         if hasattr(self, "upnow_status_label"):
             if self.controller.config.break_reminder_enabled:
                 from datetime import datetime
                 tracker_status = self.controller.break_tracker.status_text(datetime.now())
-                self.upnow_status_label.setText(f"UpNow Durumu: {tracker_status}")
+                self.upnow_status_label.setText(f"Mola Takipçisi Aktif: {tracker_status}")
+
+                if hasattr(self, "upnow_badge"):
+                    state = self.controller.break_tracker.state
+                    if state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION):
+                        self.upnow_badge.setText("🔵 MOLADA")
+                        self.upnow_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(59, 130, 246, 0.15); color: #3b82f6;")
+                    elif state == BreakState.PAUSED:
+                        self.upnow_badge.setText("🟡 DURAKLATILDI")
+                        self.upnow_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(234, 179, 8, 0.15); color: #eab308;")
+                    else:
+                        self.upnow_badge.setText("🟢 ETKİN")
+                        self.upnow_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(34, 197, 94, 0.15); color: #22c55e;")
             else:
                 self.upnow_status_label.setText("UpNow Mola Takipçisi şu anda devre dışı.")
+                if hasattr(self, "upnow_badge"):
+                    self.upnow_badge.setText("⚪ DEVRE DIŞI")
+                    self.upnow_badge.setStyleSheet("font-weight: bold; padding: 3px 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.15); color: #94a3b8;")
 
     def closeEvent(self, event):
         # X uygulamayı kapatmaz; yalnızca ayar penceresini gizler.

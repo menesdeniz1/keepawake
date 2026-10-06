@@ -102,6 +102,8 @@ def test_settings_window_upnow_fields(controller):
     assert win.tabs.count() == 2
     assert "KeepAwake" in win.tabs.tabText(0)
     assert "UpNow" in win.tabs.tabText(1)
+    assert hasattr(win, "ka_badge")
+    assert hasattr(win, "upnow_badge")
     assert hasattr(win, "upnow_status_label")
     assert hasattr(win, "tab_start_break_btn")
     assert hasattr(win, "tab_snooze_btn")
