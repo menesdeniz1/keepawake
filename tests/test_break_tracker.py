@@ -124,6 +124,39 @@ def test_break_tracker_snooze():
     assert tracker.remaining_seconds(break_time) == 12 * 60
 
 
+def test_break_tracker_extend_work_and_break():
+    config = AppConfig(break_reminder_enabled=True, work_duration_minutes=50, break_duration_minutes=10, break_snooze_minutes=10)
+    start_time = datetime(2026, 10, 6, 10, 0, 0)
+    tracker = BreakTracker(config, now=start_time)
+
+    # 1. extend_work extends working phase
+    tracker.extend_work(minutes=15, now=start_time)
+    assert tracker.state == BreakState.WORKING
+    assert tracker.is_nudge_allowed() is True
+    assert tracker.remaining_seconds(start_time) == 65 * 60
+
+    # 2. extend_break while on break extends break phase
+    now_break = start_time + timedelta(minutes=65, seconds=1)
+    tracker.tick(now=now_break, idle_seconds=30.0)
+    assert tracker.state == BreakState.ON_BREAK
+    assert tracker.is_nudge_allowed() is False
+
+    tracker.extend_break(minutes=5, now=now_break)
+    assert tracker.state == BreakState.ON_BREAK
+    assert tracker.is_nudge_allowed() is False
+    assert tracker.remaining_seconds(now_break) == 15 * 60
+
+    # 3. extend_break after break completion (when working started) puts it back into break
+    now_break_end = now_break + timedelta(minutes=15, seconds=1)
+    tracker.tick(now=now_break_end, idle_seconds=30.0)
+    assert tracker.state == BreakState.WORKING
+
+    tracker.extend_break(minutes=1, now=now_break_end)
+    assert tracker.state == BreakState.ON_BREAK
+    assert tracker.is_nudge_allowed() is False
+    assert tracker.remaining_seconds(now_break_end) == 60
+
+
 def test_break_tracker_toggle_pause():
     config = AppConfig(break_reminder_enabled=True, work_duration_minutes=50, break_duration_minutes=10)
     start_time = datetime(2026, 10, 6, 10, 0, 0)

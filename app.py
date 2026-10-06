@@ -338,7 +338,9 @@ class BreakToastNotification(QWidget):
 
     def on_snooze(self):
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        if hasattr(self.controller, "snooze_break"):
+        if callable(getattr(self, "_on_snooze_callback", None)):
+            self._on_snooze_callback(snooze_min)
+        elif hasattr(self.controller, "snooze_break"):
             self.controller.snooze_break(snooze_min)
         elif hasattr(self.controller, "break_tracker"):
             self.controller.break_tracker.snooze(snooze_min)
@@ -354,11 +356,26 @@ class BreakToastNotification(QWidget):
             y = geom.top() + 40
             self.setGeometry(x, y, width, height)
 
-    def show_toast(self, title: str, message: str, timeout_seconds: int = 8):
+    def show_toast(
+        self,
+        title: str,
+        message: str,
+        timeout_seconds: int = 8,
+        snooze_text: str | None = None,
+        on_snooze=None,
+        show_snooze: bool | None = None,
+    ):
         self.title_label.setText(title)
         self.msg_label.setText(message)
         snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+        if snooze_text:
+            self.snooze_btn.setText(snooze_text)
+        else:
+            self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
+        self._on_snooze_callback = on_snooze
+        if show_snooze is None:
+            show_snooze = True
+        self.snooze_btn.setVisible(show_snooze)
         self.adjustSize()
         self.reposition()
         self.show()
@@ -999,6 +1016,44 @@ class KeepAwakeController(QObject):
         self.notify_break_started()
         self.tick()
 
+    def extend_work(self, minutes: int | None = None):
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
+        self.break_tracker.extend_work(minutes)
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            self.nag_dialog.hide()
+        title = "UpNow - Mola Ertelendi"
+        msg = f"Mola {minutes} dakika ertelendi, çalışmaya devam ediliyor."
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            show_snooze=False,
+        )
+        self.tick()
+
+    def extend_break(self, minutes: int | None = None):
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
+        self.break_tracker.extend_break(minutes)
+        if (
+            getattr(self, "nag_dialog", None) is not None
+            and self.nag_dialog.isVisible()
+        ):
+            self.nag_dialog.hide()
+        title = "UpNow - Mola Uzatıldı"
+        msg = f"Mola {minutes} dakika uzatıldı, dinlenmeye devam edebilirsiniz."
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            show_snooze=False,
+        )
+        self.tick()
+
     def snooze_break(self, minutes: int | None = None):
         if minutes is None:
             minutes = getattr(self.config, "break_snooze_minutes", 5)
@@ -1010,7 +1065,12 @@ class KeepAwakeController(QObject):
             self.nag_dialog.hide()
         title = "UpNow - Mola Ertelendi"
         msg = f"Mola {minutes} dakika ertelendi."
-        self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            show_snooze=False,
+        )
         self.tick()
 
     def start_work_now(self):
@@ -1172,6 +1232,9 @@ class KeepAwakeController(QObject):
         title: str,
         message: str,
         icon: QSystemTrayIcon.MessageIcon = QSystemTrayIcon.MessageIcon.Information,
+        snooze_text: str | None = None,
+        on_snooze=None,
+        show_snooze: bool | None = None,
     ):
         # 1. Native platform notification (e.g. macOS osascript, Linux notify-send)
         try:
@@ -1182,7 +1245,13 @@ class KeepAwakeController(QObject):
         # 2. Nazik Mod: Ekranın sağ üst köşesinde açılan zarif bildirim kartı
         if hasattr(self, "toast_notification") and self.toast_notification is not None:
             try:
-                self.toast_notification.show_toast(title, message)
+                self.toast_notification.show_toast(
+                    title,
+                    message,
+                    snooze_text=snooze_text,
+                    on_snooze=on_snooze,
+                    show_snooze=show_snooze,
+                )
             except Exception:
                 pass
 
@@ -1207,7 +1276,15 @@ class KeepAwakeController(QObject):
                 self.nag_dialog.raise_()
                 self.nag_dialog.activateWindow()
         else:
-            self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
+            snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+            self.show_system_notification(
+                title,
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                snooze_text=f"{snooze_min} Dk Ertele",
+                on_snooze=lambda m: self.extend_work(m),
+                show_snooze=True,
+            )
 
     def notify_break_finished(self):
         if getattr(self, "nag_dialog", None) is not None and self.nag_dialog.isVisible():
@@ -1217,7 +1294,15 @@ class KeepAwakeController(QObject):
 
         title = "UpNow - Mola Tamamlandı"
         msg = "Mola süresi tamamlandı. Odaklanma süresi başladı, iyi çalışmalar!"
-        self.show_system_notification(title, msg, QSystemTrayIcon.MessageIcon.Information)
+        snooze_min = getattr(self.config, "break_snooze_minutes", 5)
+        self.show_system_notification(
+            title,
+            msg,
+            QSystemTrayIcon.MessageIcon.Information,
+            snooze_text=f"{snooze_min} Dk Ertele",
+            on_snooze=lambda m: self.extend_break(m),
+            show_snooze=True,
+        )
 
     def trigger_break_alert(self):
         # Yalnızca zorlayıcı (nagging) modda pencereyi öne getirir.

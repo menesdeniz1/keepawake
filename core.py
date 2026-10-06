@@ -93,6 +93,42 @@ class BreakTracker:
         current = now or datetime.now()
         self._start_break(current)
 
+    def extend_work(self, minutes: int | None = None, now: datetime | None = None) -> None:
+        """Çalışmayı uzatır (molaya girmeyi erteler)."""
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
+        current = now or datetime.now()
+        if self.state == BreakState.PAUSED:
+            self._paused_state = BreakState.WORKING
+            self._paused_remaining_seconds += minutes * 60
+            return
+
+        was_working = self.state == BreakState.WORKING
+        self.state = BreakState.WORKING
+        self._last_alert_time = None
+        if was_working and self.target_time is not None and self.target_time > current:
+            self.target_time += timedelta(minutes=minutes)
+        else:
+            self.target_time = current + timedelta(minutes=minutes)
+
+    def extend_break(self, minutes: int | None = None, now: datetime | None = None) -> None:
+        """Molayı uzatır (çalışmaya dönmeyi erteler)."""
+        if minutes is None:
+            minutes = getattr(self.config, "break_snooze_minutes", 5)
+        current = now or datetime.now()
+        if self.state == BreakState.PAUSED:
+            self._paused_state = BreakState.ON_BREAK
+            self._paused_remaining_seconds += minutes * 60
+            return
+
+        was_on_break = self.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION)
+        self.state = BreakState.ON_BREAK
+        self._last_alert_time = None
+        if was_on_break and self.target_time is not None and self.target_time > current:
+            self.target_time += timedelta(minutes=minutes)
+        else:
+            self.target_time = current + timedelta(minutes=minutes)
+
     def snooze(self, minutes: int | None = None, now: datetime | None = None) -> None:
         if minutes is None:
             minutes = getattr(self.config, "break_snooze_minutes", 5)
