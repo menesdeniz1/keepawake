@@ -13,13 +13,25 @@ from enum import Enum
 from pathlib import Path
 
 APP_NAME = "KeepAwake"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 
 DAY_KEYS = [
     "monday", "tuesday", "wednesday", "thursday",
     "friday", "saturday", "sunday",
 ]
 DAY_LABELS_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+
+
+def _safe_hhmm_str(val: str, default: str) -> str:
+    try:
+        parts = str(val).split(":")
+        if len(parts) == 2:
+            h, m = int(parts[0]), int(parts[1])
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                return f"{h:02d}:{m:02d}"
+    except Exception:
+        pass
+    return default
 
 
 @dataclass
@@ -50,8 +62,33 @@ class AppConfig:
     break_floating_timer_enabled: bool = True
 
     def __post_init__(self):
-        if self.days is None:
+        # Durations & interval validation (strictly positive)
+        self.work_duration_minutes = max(1, int(self.work_duration_minutes))
+        self.break_duration_minutes = max(1, int(self.break_duration_minutes))
+        self.break_snooze_minutes = max(1, int(self.break_snooze_minutes))
+        self.break_extend_minutes = max(1, int(self.break_extend_minutes))
+        self.idle_minutes = max(1, int(self.idle_minutes))
+        self.check_interval_seconds = max(1, int(self.check_interval_seconds))
+        self.break_violation_threshold_seconds = max(1, int(self.break_violation_threshold_seconds))
+        self.break_alert_cooldown_seconds = max(1, int(self.break_alert_cooldown_seconds))
+
+        # Cooldown bounds validation
+        self.cooldown_min_seconds = max(1, int(self.cooldown_min_seconds))
+        self.cooldown_max_seconds = max(1, int(self.cooldown_max_seconds))
+        if self.cooldown_min_seconds > self.cooldown_max_seconds:
+            self.cooldown_min_seconds, self.cooldown_max_seconds = (
+                self.cooldown_max_seconds,
+                self.cooldown_min_seconds,
+            )
+
+        # Time format validation
+        self.start_time = _safe_hhmm_str(self.start_time, "08:30")
+        self.end_time = _safe_hhmm_str(self.end_time, "17:30")
+
+        if self.days is None or not isinstance(self.days, list):
             self.days = DAY_KEYS[:5]
+        else:
+            self.days = [d for d in self.days if d in DAY_KEYS]
 
 
 class BreakState(str, Enum):
@@ -68,10 +105,12 @@ class BreakTracker:
         self.state: BreakState = BreakState.DISABLED
         self.target_time: datetime | None = None
         self._last_alert_time: datetime | None = None
+        self._last_tick_time: datetime | None = None
         self._paused_state: BreakState | None = None
         self._paused_remaining_seconds: float = 0.0
 
         current = now or datetime.now()
+        self._last_tick_time = current
         if self.config.break_reminder_enabled:
             self._start_working(current)
         else:
@@ -183,6 +222,16 @@ class BreakTracker:
 
         current = now or datetime.now()
 
+        # Handle system clock rollback (NTP sync / DST change)
+        if self._last_tick_time is not None and current < self._last_tick_time:
+            backward_jump = self._last_tick_time - current
+            if self.target_time is not None:
+                self.target_time -= backward_jump
+            if self._last_alert_time is not None and self._last_alert_time > current:
+                self._last_alert_time -= backward_jump
+
+        self._last_tick_time = current
+
         if self.state == BreakState.DISABLED:
             self._start_working(current)
             return
@@ -237,15 +286,25 @@ class BreakTracker:
             time_str = f"{minutes:02d}:{seconds:02d}"
             return f"Mola Vakti: {time_str} kaldı (Masadan Kalk!)"
 
-    def update_config(self, config: AppConfig, now: datetime | None = None) -> None:
-        current = now or datetime.now()
+    def update_config(self, config: AppConfig, now: datetime | None = None, current: datetime | None = None) -> None:
+        curr = current or now or datetime.now()
         was_enabled = self.config.break_reminder_enabled
+        old_work_duration = self.config.work_duration_minutes
+        old_break_duration = self.config.break_duration_minutes
         self.config = config
         if not config.break_reminder_enabled:
             self.state = BreakState.DISABLED
             self.target_time = None
         elif not was_enabled and config.break_reminder_enabled:
-            self._start_working(current)
+            self._start_working(curr)
+        else:
+            # Active state duration reconciliation based on elapsed time
+            if self.state == BreakState.WORKING and self.target_time is not None:
+                started_at = self.target_time - timedelta(minutes=old_work_duration)
+                self.target_time = started_at + timedelta(minutes=config.work_duration_minutes)
+            elif self.state in (BreakState.ON_BREAK, BreakState.BREAK_VIOLATION) and self.target_time is not None:
+                started_at = self.target_time - timedelta(minutes=old_break_duration)
+                self.target_time = started_at + timedelta(minutes=config.break_duration_minutes)
 
     def reset(self, now: datetime | None = None) -> None:
         current = now or datetime.now()
@@ -258,9 +317,13 @@ class BreakTracker:
 
 
 class ConfigStore:
-    def __init__(self):
-        self.dir = self._config_dir()
-        self.path = self.dir / "config.json"
+    def __init__(self, path: Path | None = None):
+        if path is not None:
+            self.path = Path(path)
+            self.dir = self.path.parent
+        else:
+            self.dir = self._config_dir()
+            self.path = self.dir / "config.json"
 
     @staticmethod
     def _config_dir() -> Path:
@@ -279,11 +342,20 @@ class ConfigStore:
             return AppConfig()
 
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
+            content = self.path.read_text(encoding="utf-8")
+            data = json.loads(content)
+            if not isinstance(data, dict):
+                raise ValueError("Config JSON must be a dictionary")
             allowed = set(AppConfig.__dataclass_fields__.keys())
             filtered = {k: v for k, v in data.items() if k in allowed}
             return AppConfig(**filtered)
         except Exception:
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = self.path.with_name(f"config.json.corrupt.{timestamp}")
+                self.path.replace(backup_path)
+            except Exception:
+                pass
             return AppConfig()
 
     def save(self, config: AppConfig) -> None:
@@ -293,12 +365,29 @@ class ConfigStore:
             json.dumps(asdict(config), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        if os.name == "posix":
+            try:
+                os.chmod(temp, 0o600)
+            except OSError:
+                pass
         temp.replace(self.path)
+        if os.name == "posix":
+            try:
+                os.chmod(self.path, 0o600)
+            except OSError:
+                pass
 
 
 def parse_hhmm(value: str) -> dt_time:
-    hour, minute = map(int, value.split(":"))
-    return dt_time(hour=hour, minute=minute)
+    try:
+        parts = str(value).split(":")
+        if len(parts) == 2:
+            h, m = int(parts[0]), int(parts[1])
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                return dt_time(hour=h, minute=m)
+    except Exception:
+        pass
+    return dt_time(hour=9, minute=0)
 
 
 def is_inside_schedule(config: AppConfig, now: datetime) -> bool:

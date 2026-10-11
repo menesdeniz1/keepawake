@@ -103,6 +103,7 @@ class SingleInstance:
         QLocalServer.removeServer(SINGLE_INSTANCE_NAME)
 
         self.server = QLocalServer(self.app)
+        self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         if not self.server.listen(SINGLE_INSTANCE_NAME):
             raise RuntimeError("KeepAwake IPC sunucusu başlatılamadı.")
 
@@ -111,14 +112,20 @@ class SingleInstance:
             if socket is None:
                 return
 
-            if socket.waitForReadyRead(300):
-                command = bytes(socket.readAll()).decode(
-                    "utf-8", errors="ignore"
-                ).strip()
-                on_command(command)
+            def on_ready_read():
+                try:
+                    command = bytes(socket.readAll()).decode(
+                        "utf-8", errors="ignore"
+                    ).strip()
+                    if command:
+                        on_command(command)
+                finally:
+                    socket.disconnectFromServer()
+                    socket.deleteLater()
 
-            socket.disconnectFromServer()
-            socket.deleteLater()
+            socket.readyRead.connect(on_ready_read)
+            if socket.bytesAvailable() > 0:
+                on_ready_read()
 
         self.server.newConnection.connect(handle_connection)
 
@@ -219,27 +226,39 @@ class BreakNagDialog(QDialog):
         self.extend_btn.setText(f"{extend_min} Dakika Uzat")
 
     def on_snooze(self):
-        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        if hasattr(self.controller, "snooze_break"):
-            self.controller.snooze_break(snooze_min)
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.snooze(snooze_min)
-        self.hide()
+        self.snooze_btn.setEnabled(False)
+        try:
+            snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+            if hasattr(self.controller, "snooze_break"):
+                self.controller.snooze_break(snooze_min)
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.snooze(snooze_min)
+        finally:
+            self.hide()
+            self.snooze_btn.setEnabled(True)
 
     def on_extend(self):
-        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
-        if hasattr(self.controller, "extend_break"):
-            self.controller.extend_break(extend_min)
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.extend_break(extend_min)
-        self.hide()
+        self.extend_btn.setEnabled(False)
+        try:
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            if hasattr(self.controller, "extend_break"):
+                self.controller.extend_break(extend_min)
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.extend_break(extend_min)
+        finally:
+            self.hide()
+            self.extend_btn.setEnabled(True)
 
     def on_finish(self):
-        if hasattr(self.controller, "start_work_now"):
-            self.controller.start_work_now()
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.reset()
-        self.hide()
+        self.finish_btn.setEnabled(False)
+        try:
+            if hasattr(self.controller, "start_work_now"):
+                self.controller.start_work_now()
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.reset()
+        finally:
+            self.hide()
+            self.finish_btn.setEnabled(True)
 
     def closeEvent(self, event):
         # Zorlayıcı modda pencere X ile kapanmaz; kullanıcı Ertele veya Molayı Bitir butonuna basmalıdır.
@@ -362,31 +381,43 @@ class BreakToastNotification(QWidget):
         """)
 
     def on_snooze(self):
-        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        if callable(getattr(self, "_on_snooze_callback", None)):
-            self._on_snooze_callback(snooze_min)
-        elif hasattr(self.controller, "extend_work"):
-            self.controller.extend_work(snooze_min)
-        elif hasattr(self.controller, "snooze_break"):
-            self.controller.snooze_break(snooze_min)
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.snooze(snooze_min)
-        self.hide()
+        self.snooze_btn.setEnabled(False)
+        try:
+            snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+            if callable(getattr(self, "_on_snooze_callback", None)):
+                self._on_snooze_callback(snooze_min)
+            elif hasattr(self.controller, "extend_work"):
+                self.controller.extend_work(snooze_min)
+            elif hasattr(self.controller, "snooze_break"):
+                self.controller.snooze_break(snooze_min)
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.snooze(snooze_min)
+        finally:
+            self.hide()
+            self.snooze_btn.setEnabled(True)
 
     def on_extend(self):
-        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
-        if callable(getattr(self, "_on_extend_callback", None)):
-            self._on_extend_callback(extend_min)
-        elif hasattr(self.controller, "extend_break"):
-            self.controller.extend_break(extend_min)
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.extend_break(extend_min)
-        self.hide()
+        self.extend_btn.setEnabled(False)
+        try:
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            if callable(getattr(self, "_on_extend_callback", None)):
+                self._on_extend_callback(extend_min)
+            elif hasattr(self.controller, "extend_break"):
+                self.controller.extend_break(extend_min)
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.extend_break(extend_min)
+        finally:
+            self.hide()
+            self.extend_btn.setEnabled(True)
 
     def on_emergency(self):
-        if hasattr(self.controller, "start_work_now"):
-            self.controller.start_work_now()
-        self.hide()
+        self.emergency_btn.setEnabled(False)
+        try:
+            if hasattr(self.controller, "start_work_now"):
+                self.controller.start_work_now()
+        finally:
+            self.hide()
+            self.emergency_btn.setEnabled(True)
 
     def reposition(self):
         screen = QApplication.primaryScreen()
@@ -563,28 +594,40 @@ class BreakFloatingPill(QWidget):
         self.snooze_btn.setText(f"{snooze_min} Dk Ertele")
 
     def on_extend(self):
-        extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
-        if hasattr(self.controller, "extend_break"):
-            self.controller.extend_break(extend_min)
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.extend_break(extend_min)
+        self.extend_btn.setEnabled(False)
+        try:
+            extend_min = getattr(self.controller.config, "break_extend_minutes", 5)
+            if hasattr(self.controller, "extend_break"):
+                self.controller.extend_break(extend_min)
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.extend_break(extend_min)
+        finally:
+            self.extend_btn.setEnabled(True)
 
     def on_snooze(self):
-        snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
-        if hasattr(self.controller, "extend_work"):
-            self.controller.extend_work(snooze_min)
-        elif hasattr(self.controller, "snooze_break"):
-            self.controller.snooze_break(snooze_min)
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.extend_work(snooze_min)
-        self.hide()
+        self.snooze_btn.setEnabled(False)
+        try:
+            snooze_min = getattr(self.controller.config, "break_snooze_minutes", 5)
+            if hasattr(self.controller, "extend_work"):
+                self.controller.extend_work(snooze_min)
+            elif hasattr(self.controller, "snooze_break"):
+                self.controller.snooze_break(snooze_min)
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.extend_work(snooze_min)
+        finally:
+            self.hide()
+            self.snooze_btn.setEnabled(True)
 
     def on_emergency(self):
-        if hasattr(self.controller, "start_work_now"):
-            self.controller.start_work_now()
-        elif hasattr(self.controller, "break_tracker"):
-            self.controller.break_tracker.reset()
-        self.hide()
+        self.emergency_btn.setEnabled(False)
+        try:
+            if hasattr(self.controller, "start_work_now"):
+                self.controller.start_work_now()
+            elif hasattr(self.controller, "break_tracker"):
+                self.controller.break_tracker.reset()
+        finally:
+            self.hide()
+            self.emergency_btn.setEnabled(True)
 
     def on_close(self):
         self._manually_closed = True
@@ -1263,6 +1306,9 @@ class KeepAwakeController(QObject):
             self.window.update_snooze_buttons()
 
         self.break_tracker.update_config(self.config)
+        if not self.config.break_floating_timer_enabled or not self.config.break_reminder_enabled:
+            if hasattr(self, "floating_pill") and self.floating_pill is not None:
+                self.floating_pill.hide()
         self.tick()
 
     def set_enabled_from_tray(self, checked: bool):
@@ -1781,14 +1827,28 @@ class KeepAwakeController(QObject):
             self.quit()
 
     def check_for_updates_manual(self):
+        if sys.platform != "win32":
+            QMessageBox.information(
+                self.window,
+                APP_NAME,
+                f"KeepAwake v{APP_VERSION}\n\nOtomatik kurulum paketi şu anda Windows için mevcuttur. "
+                "macOS ve Linux güncellemeleri için GitHub sayfasını ziyaret edebilirsiniz:\n"
+                "https://github.com/menesdeniz1/keepawake/releases",
+            )
+            return
         self._update_check_manual = True
         self.update_manager.check()
 
     def check_for_updates_auto(self):
+        if sys.platform != "win32":
+            return
         self._update_check_manual = False
         self.update_manager.check()
 
     def on_update_available(self, version: str, url: str, sha256: str):
+        if sys.platform != "win32":
+            return
+
         answer = QMessageBox.question(
             self.window,
             APP_NAME,
@@ -1800,7 +1860,8 @@ class KeepAwakeController(QObject):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
-        dest_dir = Path(tempfile.gettempdir()) / APP_NAME
+        from updater import create_secure_temp_dir
+        dest_dir = create_secure_temp_dir()
         self.update_manager.download(url, sha256, dest_dir)
 
     def on_up_to_date(self):

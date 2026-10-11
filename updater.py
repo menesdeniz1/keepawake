@@ -1,7 +1,12 @@
 import hashlib
+import hmac
 import json
+import os
+import re
 import subprocess
+import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
@@ -11,6 +16,43 @@ from core import is_newer
 MANIFEST_URL = (
     "https://raw.githubusercontent.com/menesdeniz1/keepawake/main/latest.json"
 )
+
+ALLOWED_RELEASE_HOST = "github.com"
+ALLOWED_PATH_PREFIX = "/menesdeniz1/keepawake/releases/download/"
+ALLOW_LOCAL_TEST_HOSTS = {"127.0.0.1", "localhost"}
+SHA256_HEX_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+MAX_INSTALLER_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+def validate_update_metadata(url: str, sha256: str) -> bool:
+    if not isinstance(url, str) or not isinstance(sha256, str):
+        return False
+    if not SHA256_HEX_PATTERN.match(sha256):
+        return False
+    parsed = urlparse(url)
+
+    # Allow local mock test server when explicitly configured for testing
+    if os.environ.get("KEEPAWAKE_ALLOW_LOCAL_UPDATE") == "1":
+        if parsed.hostname in ALLOW_LOCAL_TEST_HOSTS:
+            return True
+
+    if parsed.scheme != "https":
+        return False
+    if parsed.netloc.lower() != ALLOWED_RELEASE_HOST:
+        return False
+    if not parsed.path.startswith(ALLOWED_PATH_PREFIX):
+        return False
+    return True
+
+
+def create_secure_temp_dir() -> Path:
+    temp_dir = Path(tempfile.mkdtemp(prefix="keepawake_update_"))
+    if hasattr(os, "chmod") and os.name == "posix":
+        try:
+            os.chmod(temp_dir, 0o700)
+        except OSError:
+            pass
+    return temp_dir
 
 
 def _enable_redirects(request: QNetworkRequest) -> None:
@@ -84,6 +126,12 @@ class UpdateManager(QObject):
                 )
                 return
 
+            if not validate_update_metadata(url, sha256):
+                self.check_failed.emit(
+                    "Güncelleme URL'si veya sağlama özeti (SHA256) güvenlik kriterlerini karşılamıyor."
+                )
+                return
+
             self.update_available.emit(remote_version, url, sha256)
         finally:
             reply.deleteLater()
@@ -93,11 +141,13 @@ class UpdateManager(QObject):
             return
 
         expected_sha256 = expected_sha256.strip().lower()
-        if not expected_sha256:
-            raise ValueError("expected_sha256 boş olamaz.")
+        if not validate_update_metadata(url, expected_sha256):
+            raise ValueError("Güvensiz veya geçersiz güncelleme URL/SHA256 bilgisi.")
 
         dest_dir.mkdir(parents=True, exist_ok=True)
         self._download_dest = dest_dir / "KeepAwakeUpdate.exe"
+        if self._download_dest.is_symlink():
+            self._download_dest.unlink()
         self._download_expected_sha256 = expected_sha256
 
         request = QNetworkRequest(QUrl(url))
@@ -117,15 +167,23 @@ class UpdateManager(QObject):
                 return
 
             payload = bytes(reply.readAll())
+            if len(payload) > MAX_INSTALLER_SIZE_BYTES:
+                self.download_finished.emit(
+                    False, "İndirilen güncelleme dosyası azami boyut sınırını aşıyor."
+                )
+                return
+
             digest = hashlib.sha256(payload).hexdigest()
 
-            if digest != self._download_expected_sha256:
+            if not hmac.compare_digest(digest, self._download_expected_sha256):
                 self.download_finished.emit(
                     False, "SHA256 doğrulaması başarısız oldu."
                 )
                 return
 
             assert self._download_dest is not None
+            if self._download_dest.is_symlink():
+                self._download_dest.unlink()
             self._download_dest.write_bytes(payload)
             self.download_finished.emit(True, str(self._download_dest))
         finally:
@@ -135,9 +193,12 @@ class UpdateManager(QObject):
 def run_silent_install(installer_path: str) -> subprocess.Popen:
     """Installer'ı sessiz modda başlatır. Çağıran taraf hemen ardından
     uygulamayı kapatmalıdır ki dosya kilitleri Setup'ı engellemesin."""
+    path_obj = Path(installer_path)
+    if not path_obj.is_file() or path_obj.is_symlink():
+        raise RuntimeError("Geçersiz veya güvensiz yükleyici dosyası.")
     return subprocess.Popen(
         [
-            installer_path,
+            str(path_obj.resolve()),
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
             "/NORESTART",
