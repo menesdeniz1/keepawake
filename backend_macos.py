@@ -5,6 +5,7 @@ import time
 import plistlib
 import subprocess
 from pathlib import Path
+import atexit
 import ctypes
 from ctypes import c_double, c_uint32, c_void_p, Structure
 
@@ -84,12 +85,14 @@ def nudge_mouse() -> bool:
     if _core_graphics is None or _core_foundation is None:
         return False
 
+    ev = None
+    m1 = None
+    m2 = None
     try:
         ev = _core_graphics.CGEventCreate(None)
         if not ev:
             return False
         loc = _core_graphics.CGEventGetLocation(ev)
-        _core_foundation.CFRelease(ev)
 
         # 1 piksel sağa
         p1 = CGPoint(loc.x + 1, loc.y)
@@ -97,7 +100,6 @@ def nudge_mouse() -> bool:
         if not m1:
             return False
         _core_graphics.CGEventPost(kCGHIDEventTap, m1)
-        _core_foundation.CFRelease(m1)
 
         time.sleep(0.03)
 
@@ -107,11 +109,26 @@ def nudge_mouse() -> bool:
         if not m2:
             return False
         _core_graphics.CGEventPost(kCGHIDEventTap, m2)
-        _core_foundation.CFRelease(m2)
 
         return True
     except Exception:
         return False
+    finally:
+        if ev and _core_foundation:
+            try:
+                _core_foundation.CFRelease(ev)
+            except Exception:
+                pass
+        if m1 and _core_foundation:
+            try:
+                _core_foundation.CFRelease(m1)
+            except Exception:
+                pass
+        if m2 and _core_foundation:
+            try:
+                _core_foundation.CFRelease(m2)
+            except Exception:
+                pass
 
 
 def set_execution_state(prevent_sleep: bool = True, keep_display_on: bool = True) -> bool:
@@ -151,17 +168,28 @@ def set_execution_state(prevent_sleep: bool = True, keep_display_on: bool = True
 
 
 def clear_execution_state() -> None:
-    """Çalışan caffeinate alt sürecini sonlandırır."""
+    """Çalışan caffeinate alt sürecini sonlandırır ve temizler."""
     global _caffeinate_proc, _caffeinate_flags
 
     if _caffeinate_proc is not None and _caffeinate_proc.poll() is None:
         try:
             _caffeinate_proc.terminate()
-        except OSError:
-            pass
+            if hasattr(_caffeinate_proc, "wait"):
+                _caffeinate_proc.wait(timeout=1.0)
+        except (subprocess.SubprocessError, OSError, Exception):
+            try:
+                if hasattr(_caffeinate_proc, "kill"):
+                    _caffeinate_proc.kill()
+                if hasattr(_caffeinate_proc, "wait"):
+                    _caffeinate_proc.wait(timeout=0.5)
+            except (subprocess.SubprocessError, OSError, Exception):
+                pass
 
     _caffeinate_proc = None
     _caffeinate_flags = frozenset()
+
+
+atexit.register(clear_execution_state)
 
 
 def _get_program_arguments() -> list[str]:

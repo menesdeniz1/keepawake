@@ -69,6 +69,11 @@ def qapp():
     return QCoreApplication.instance() or QCoreApplication(sys.argv)
 
 
+@pytest.fixture(autouse=True)
+def allow_local_updates_env(monkeypatch):
+    monkeypatch.setenv("KEEPAWAKE_ALLOW_LOCAL_UPDATE", "1")
+
+
 def _run_with_timeout(app, timeout_ms=8000):
     QTimer.singleShot(timeout_ms, app.quit)
     app.exec()

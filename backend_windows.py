@@ -2,8 +2,12 @@
 
 import sys
 import ctypes
-import winreg
 from pathlib import Path
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 from core import APP_NAME
 
@@ -47,10 +51,41 @@ class INPUT(ctypes.Structure):
     ]
 
 
+user32 = getattr(ctypes, "windll", None) and getattr(ctypes.windll, "user32", None)
+kernel32 = getattr(ctypes, "windll", None) and getattr(ctypes.windll, "kernel32", None)
+
+if user32 and kernel32:
+    try:
+        user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
+        user32.GetLastInputInfo.restype = ctypes.c_int
+
+        kernel32.GetTickCount.argtypes = []
+        kernel32.GetTickCount.restype = ctypes.c_uint32
+
+        kernel32.SetThreadExecutionState.argtypes = [ctypes.c_uint32]
+        kernel32.SetThreadExecutionState.restype = ctypes.c_uint32
+
+        user32.SendInput.argtypes = [ctypes.c_uint, ctypes.POINTER(INPUT), ctypes.c_int]
+        user32.SendInput.restype = ctypes.c_uint
+
+        kernel32.Sleep.argtypes = [ctypes.c_uint32]
+        kernel32.Sleep.restype = None
+    except Exception:
+        pass
+
+
+def _get_idle_from_ticks(now32: int, dw_time: int) -> float:
+    elapsed_ms = (now32 - dw_time) & 0xFFFFFFFF
+    if elapsed_ms > 0x7FFFFFFF:
+        # Clock skew, low-power resume, or wrap around anomaly
+        return 0.0
+    return elapsed_ms / 1000.0
+
+
 def get_idle_seconds() -> float:
     """Windows'taki son kullanıcı girdisinden beri geçen süre."""
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
+    if not user32 or not kernel32:
+        return 0.0
 
     info = LASTINPUTINFO()
     info.cbSize = ctypes.sizeof(info)
@@ -58,11 +93,8 @@ def get_idle_seconds() -> float:
     if not user32.GetLastInputInfo(ctypes.byref(info)):
         return 0.0
 
-    # LASTINPUTINFO.dwTime 32 bittir. Farkı aynı 32-bit tick alanında
-    # alarak GetTickCount wrap-around durumunu doğru ele alırız.
     now32 = kernel32.GetTickCount() & 0xFFFFFFFF
-    elapsed_ms = (now32 - info.dwTime) & 0xFFFFFFFF
-    return elapsed_ms / 1000.0
+    return _get_idle_from_ticks(now32, info.dwTime)
 
 
 def set_execution_state(prevent_sleep: bool, keep_display_on: bool) -> bool:
@@ -130,6 +162,8 @@ def _get_executable_command() -> str:
 
 
 def is_startup_enabled() -> bool:
+    if winreg is None:
+        return False
     try:
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -144,6 +178,8 @@ def is_startup_enabled() -> bool:
 
 
 def set_startup_enabled(enabled: bool) -> None:
+    if winreg is None:
+        return
     path = _startup_registry_path()
 
     if enabled:

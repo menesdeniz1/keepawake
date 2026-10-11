@@ -139,14 +139,31 @@ def set_execution_state(prevent_sleep: bool, keep_display_on: bool) -> bool:
     return False
 
 
+import atexit
+
+
 def clear_execution_state() -> None:
     global _inhibit_proc, _inhibit_what
 
     if _inhibit_proc is not None and _inhibit_proc.poll() is None:
-        _inhibit_proc.terminate()
+        try:
+            _inhibit_proc.terminate()
+            if hasattr(_inhibit_proc, "wait"):
+                _inhibit_proc.wait(timeout=1.0)
+        except (subprocess.SubprocessError, OSError, Exception):
+            try:
+                if hasattr(_inhibit_proc, "kill"):
+                    _inhibit_proc.kill()
+                if hasattr(_inhibit_proc, "wait"):
+                    _inhibit_proc.wait(timeout=0.5)
+            except (subprocess.SubprocessError, OSError, Exception):
+                pass
 
     _inhibit_proc = None
     _inhibit_what = frozenset()
+
+
+atexit.register(clear_execution_state)
 
 
 def _get_executable_command() -> str:
